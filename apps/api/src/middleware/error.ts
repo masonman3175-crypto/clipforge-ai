@@ -17,9 +17,7 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return res.status(400).json({ error: 'validation_error', details: err.flatten() });
   }
   console.error('Unhandled error:', err);
-  return res
-    .status(500)
-    .json({ error: 'internal_server_error', message: err instanceof Error ? err.message : String(err) });
+  return res.status(500).json({ error: 'internal_server_error' });
 }
 
 /** Wrap async route handlers so thrown errors reach errorHandler. */
