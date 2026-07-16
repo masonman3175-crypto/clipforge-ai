@@ -29,6 +29,13 @@ const schema = z.object({
   // No longer required: tokens are validated via supabaseAdmin.auth.getUser().
   SUPABASE_JWT_SECRET: z.string().optional(),
 
+  // Cloudflare R2 (S3-compatible) storage. When all are set, storage uses R2
+  // (no 50MB cap) instead of Supabase Storage. Falls back to Supabase otherwise.
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+
   // AI provider: Groq (free, no card) is used when GROQ_API_KEY is set,
   // otherwise OpenAI. At least one should be provided for processing to work.
   GROQ_API_KEY: z.string().optional(),
@@ -73,6 +80,10 @@ export const env = {
   SUPABASE_SERVICE_ROLE_KEY: clean(parsed.data.SUPABASE_SERVICE_ROLE_KEY),
   OPENAI_API_KEY: clean(parsed.data.OPENAI_API_KEY),
   GROQ_API_KEY: clean(parsed.data.GROQ_API_KEY),
+  R2_ACCOUNT_ID: clean(parsed.data.R2_ACCOUNT_ID),
+  R2_ACCESS_KEY_ID: clean(parsed.data.R2_ACCESS_KEY_ID),
+  R2_SECRET_ACCESS_KEY: clean(parsed.data.R2_SECRET_ACCESS_KEY),
+  R2_BUCKET: clean(parsed.data.R2_BUCKET),
   STRIPE_SECRET_KEY: clean(parsed.data.STRIPE_SECRET_KEY),
   STRIPE_WEBHOOK_SECRET: clean(parsed.data.STRIPE_WEBHOOK_SECRET),
   STRIPE_PRICE_PRO_MONTHLY: clean(parsed.data.STRIPE_PRICE_PRO_MONTHLY),

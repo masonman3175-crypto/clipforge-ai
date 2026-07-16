@@ -6,7 +6,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { enforceVideoQuota } from '../middleware/quota.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 import { query } from '../db/pool.js';
-import { uploadFile, signedUrl, supabaseAdmin } from '../services/storage.js';
+import { uploadFile, signedUrl, createUploadUrl } from '../services/storage.js';
 import { env } from '../config/env.js';
 import { processVideo } from '../workers/processVideo.js';
 
@@ -18,14 +18,18 @@ const router = Router();
  * the request-size limits of the web proxy/API server, so large (1–2 hour)
  * videos can be uploaded.
  */
-const initSchema = z.object({ title: z.string().min(1), ext: z.string().default('.mp4') });
+const initSchema = z.object({
+  title: z.string().min(1),
+  ext: z.string().default('.mp4'),
+  contentType: z.string().default('video/mp4'),
+});
 router.post(
   '/upload-init',
   requireAuth,
   enforceVideoQuota,
   asyncHandler(async (req, res) => {
     const user = req.user!;
-    const { title, ext } = initSchema.parse(req.body);
+    const { title, ext, contentType } = initSchema.parse(req.body);
 
     const { rows } = await query<{ id: string }>(
       `INSERT INTO videos (user_id, title, source, status) VALUES ($1, $2, 'upload', 'queued') RETURNING id`,
@@ -34,13 +38,10 @@ router.post(
     const videoId = rows[0].id;
     const storageKey = `sources/${user.id}/${videoId}${ext.startsWith('.') ? ext : '.' + ext}`;
 
-    const { data, error } = await supabaseAdmin.storage
-      .from(env.SUPABASE_STORAGE_BUCKET)
-      .createSignedUploadUrl(storageKey);
-    if (error) throw new ApiError(500, `Could not create upload URL: ${error.message}`);
+    const { signedUrl: uploadUrl, path } = await createUploadUrl(storageKey, contentType);
 
     await query('UPDATE videos SET storage_path = $2 WHERE id = $1', [videoId, storageKey]);
-    res.json({ id: videoId, signedUrl: data.signedUrl, token: data.token, path: data.path });
+    res.json({ id: videoId, signedUrl: uploadUrl, path });
   }),
 );
 

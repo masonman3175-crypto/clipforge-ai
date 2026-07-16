@@ -31,6 +31,15 @@ services:
         value: clipforge-media
       - key: SUPABASE_JWT_SECRET
         sync: false
+      # Cloudflare R2 storage (no 50MB cap). When all four are set, storage uses R2.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
       # AI provider — Groq is free & needs no card; used when GROQ_API_KEY is set.
       - key: GROQ_API_KEY
         sync: false

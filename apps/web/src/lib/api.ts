@@ -72,17 +72,17 @@ export async function uploadVideo(
   }
 
   const ext = '.' + (file.name.split('.').pop() || 'mp4');
-  const init = await api<{ id: string; signedUrl: string; token: string; path: string }>(
-    '/videos/upload-init',
-    { method: 'POST', body: JSON.stringify({ title, ext }) },
-  );
+  const contentType = file.type || 'video/mp4';
+  const init = await api<{ id: string; signedUrl: string; path: string }>('/videos/upload-init', {
+    method: 'POST',
+    body: JSON.stringify({ title, ext, contentType }),
+  });
 
-  // PUT the file straight to Supabase Storage's signed upload URL, with progress.
+  // PUT the file straight to storage's signed upload URL, with progress.
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', init.signedUrl);
-    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-    xhr.setRequestHeader('x-upsert', 'true');
+    xhr.setRequestHeader('Content-Type', contentType);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };

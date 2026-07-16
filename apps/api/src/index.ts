@@ -8,6 +8,7 @@ import billingRouter, { webhookHandler } from './routes/billing.js';
 import adminRouter from './routes/admin.js';
 import analyticsRouter from './routes/analytics.js';
 import { aiConfigured, aiProviderName } from './services/aiClient.js';
+import { storageBackend } from './services/storage.js';
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.get('/health', (_req, res) =>
       webUrl: env.WEB_URL,
       aiConfigured,
       aiProvider: aiProviderName,
+      storage: storageBackend,
     },
   }),
 );
