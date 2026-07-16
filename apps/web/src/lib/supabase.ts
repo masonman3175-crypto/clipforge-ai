@@ -1,23 +1,26 @@
 'use client';
 
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 
 /**
- * Browser-side Supabase client for auth (sign-in/up, session, and reading the
- * access token we forward to the Express API as a Bearer token).
+ * Standard browser Supabase client for a client-rendered SPA.
+ *
+ * We use `@supabase/supabase-js` `createClient` (localStorage-backed) rather than
+ * `@supabase/ssr`'s cookie client, because this app guards routes on the client
+ * and has no server-side session handling. The standard client reliably:
+ *   - stores the PKCE code verifier in localStorage (survives the OAuth redirect),
+ *   - auto-detects and exchanges the `?code=` on the callback page,
+ *   - persists + refreshes the session.
  */
-// Use the implicit OAuth flow: the token comes back in the URL and is handled
-// entirely in the browser, so we don't need server-side cookie/PKCE handling.
-// This is the reliable choice for a client-rendered app like ours.
-export const supabase = createBrowserClient(
+export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   {
     auth: {
-      flowType: 'implicit',
-      detectSessionInUrl: true,
       persistSession: true,
       autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
     },
   },
 );

@@ -5,35 +5,45 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 /**
- * OAuth return handler. The Supabase browser client auto-exchanges the `?code=`
- * in the URL on load (detectSessionInUrl), so we must NOT exchange it again —
- * doing so throws "PKCE code verifier not found". Instead we just wait for the
- * resulting session and forward to the dashboard.
+ * OAuth return handler. The standard supabase-js client auto-exchanges the
+ * `?code=` in the URL on load (detectSessionInUrl) using the localStorage code
+ * verifier, so we must NOT exchange it again. We simply poll for the resulting
+ * session (up to ~15s) and forward to the dashboard once it appears.
  */
 export default function AuthCallback() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If the session is already established, go straight through.
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace('/dashboard');
-    });
+    let finished = false;
+    const go = () => {
+      if (!finished) {
+        finished = true;
+        router.replace('/dashboard');
+      }
+    };
 
-    // Otherwise wait for the auto-exchange to complete.
+    // Fires as soon as the auto-exchange completes.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) router.replace('/dashboard');
+      if (session) go();
     });
 
-    // Safety net: if nothing resolves, send them back to sign in.
-    const timeout = setTimeout(
-      () => setError('Sign-in did not complete. Please try again.'),
-      8000,
-    );
+    // Poll as a backup (covers timing/races), up to ~15 seconds.
+    let tries = 0;
+    const interval = setInterval(async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        clearInterval(interval);
+        go();
+      } else if (++tries > 30) {
+        clearInterval(interval);
+        setError('Sign-in did not complete. Please try again.');
+      }
+    }, 500);
 
     return () => {
       sub.subscription.unsubscribe();
-      clearTimeout(timeout);
+      clearInterval(interval);
     };
   }, [router]);
 
