@@ -1,9 +1,6 @@
-import OpenAI from 'openai';
 import { z } from 'zod';
-import { env } from '../config/env.js';
+import { aiClient, AI_MODELS } from './aiClient.js';
 import type { TranscriptWord } from './transcription.js';
-
-const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
 export type ClipCategory =
   | 'funny'
@@ -67,8 +64,8 @@ export async function detectClips(
     'Return JSON: { "clips": [ ... ] }.',
   ].join('\n');
 
-  const completion = await openai.chat.completions.create({
-    model: env.OPENAI_ANALYSIS_MODEL,
+  const completion = await aiClient.chat.completions.create({
+    model: AI_MODELS.analysis,
     temperature: 0.7,
     response_format: { type: 'json_object' },
     messages: [
@@ -91,16 +88,23 @@ export async function detectClips(
 }
 
 // ── Per-clip creative assets ────────────────────────────────────────────────
-const assetsSchema = z.object({
-  hooks: z.array(z.string()).length(10),
-  titles: z.object({ tiktok: z.string(), shorts: z.string(), reel: z.string() }),
-  hashtags: z.object({
-    trending: z.array(z.string()),
-    niche: z.array(z.string()),
-    seo: z.array(z.string()),
-  }),
+// Lenient schema: open models (Llama) may return slightly off counts/shapes,
+// so we accept flexible input and normalize below instead of hard-failing.
+const strArray = z.array(z.union([z.string(), z.number()]).transform(String)).default([]);
+const assetsSchemaLoose = z.object({
+  hooks: strArray,
+  titles: z
+    .object({ tiktok: z.string().optional(), shorts: z.string().optional(), reel: z.string().optional() })
+    .default({}),
+  hashtags: z
+    .object({ trending: strArray, niche: strArray, seo: strArray })
+    .default({ trending: [], niche: [], seo: [] }),
 });
-export type ClipAssets = z.infer<typeof assetsSchema>;
+export interface ClipAssets {
+  hooks: string[];
+  titles: { tiktok: string; shorts: string; reel: string };
+  hashtags: { trending: string[]; niche: string[]; seo: string[] };
+}
 
 /** Generate 10 hooks, 3 platform titles, and 3 hashtag buckets for one clip. */
 export async function generateClipAssets(clipTranscript: string, category: ClipCategory): Promise<ClipAssets> {
@@ -116,8 +120,8 @@ export async function generateClipAssets(clipTranscript: string, category: ClipC
     '- hashtags: { trending: [...], niche: [...], seo: [...] } — 5 each, no # symbol duplication issues, include the leading #.',
   ].join('\n');
 
-  const completion = await openai.chat.completions.create({
-    model: env.OPENAI_ANALYSIS_MODEL,
+  const completion = await aiClient.chat.completions.create({
+    model: AI_MODELS.analysis,
     temperature: 0.9,
     response_format: { type: 'json_object' },
     messages: [
@@ -126,7 +130,23 @@ export async function generateClipAssets(clipTranscript: string, category: ClipC
     ],
   });
 
-  return assetsSchema.parse(JSON.parse(completion.choices[0].message.content ?? '{}'));
+  const raw = assetsSchemaLoose.parse(JSON.parse(completion.choices[0].message.content ?? '{}'));
+
+  // Normalize to a stable shape: exactly-ish 10 hooks, all title fields present.
+  const hooks = raw.hooks.filter(Boolean).slice(0, 10);
+  return {
+    hooks,
+    titles: {
+      tiktok: raw.titles.tiktok ?? '',
+      shorts: raw.titles.shorts ?? '',
+      reel: raw.titles.reel ?? '',
+    },
+    hashtags: {
+      trending: raw.hashtags.trending ?? [],
+      niche: raw.hashtags.niche ?? [],
+      seo: raw.hashtags.seo ?? [],
+    },
+  };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

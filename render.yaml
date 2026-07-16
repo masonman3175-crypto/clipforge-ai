@@ -31,6 +31,9 @@ services:
         value: clipforge-media
       - key: SUPABASE_JWT_SECRET
         sync: false
+      # AI provider — Groq is free & needs no card; used when GROQ_API_KEY is set.
+      - key: GROQ_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_TRANSCRIBE_MODEL

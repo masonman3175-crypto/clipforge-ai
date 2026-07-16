@@ -29,9 +29,14 @@ const schema = z.object({
   // No longer required: tokens are validated via supabaseAdmin.auth.getUser().
   SUPABASE_JWT_SECRET: z.string().optional(),
 
-  OPENAI_API_KEY: z.string().min(1),
+  // AI provider: Groq (free, no card) is used when GROQ_API_KEY is set,
+  // otherwise OpenAI. At least one should be provided for processing to work.
+  GROQ_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
   OPENAI_TRANSCRIBE_MODEL: z.string().default('whisper-1'),
   OPENAI_ANALYSIS_MODEL: z.string().default('gpt-4o-mini'),
+  GROQ_TRANSCRIBE_MODEL: z.string().default('whisper-large-v3'),
+  GROQ_ANALYSIS_MODEL: z.string().default('llama-3.3-70b-versatile'),
 
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
@@ -67,6 +72,7 @@ export const env = {
   SUPABASE_URL: clean(parsed.data.SUPABASE_URL),
   SUPABASE_SERVICE_ROLE_KEY: clean(parsed.data.SUPABASE_SERVICE_ROLE_KEY),
   OPENAI_API_KEY: clean(parsed.data.OPENAI_API_KEY),
+  GROQ_API_KEY: clean(parsed.data.GROQ_API_KEY),
   STRIPE_SECRET_KEY: clean(parsed.data.STRIPE_SECRET_KEY),
   STRIPE_WEBHOOK_SECRET: clean(parsed.data.STRIPE_WEBHOOK_SECRET),
   STRIPE_PRICE_PRO_MONTHLY: clean(parsed.data.STRIPE_PRICE_PRO_MONTHLY),

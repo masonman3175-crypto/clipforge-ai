@@ -13,6 +13,7 @@ import { renderVerticalClip } from '../services/ffmpeg.js';
 import { downloadTo, uploadFile } from '../services/storage.js';
 import { downloadYouTube } from '../services/youtube.js';
 import { probe } from '../services/ffmpeg.js';
+import { aiConfigured } from '../services/aiClient.js';
 
 /**
  * End-to-end processing pipeline for a single video, run in the background.
@@ -25,6 +26,11 @@ import { probe } from '../services/ffmpeg.js';
  */
 export async function processVideo(videoId: string): Promise<void> {
   try {
+    if (!aiConfigured) {
+      throw new Error(
+        'AI provider not configured. Set GROQ_API_KEY (free, no card) or a real OPENAI_API_KEY.',
+      );
+    }
     const video = await getVideo(videoId);
 
     // 1. Get a local copy of the source (upload from storage, or YouTube DL).

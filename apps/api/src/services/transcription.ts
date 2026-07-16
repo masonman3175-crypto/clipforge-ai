@@ -1,8 +1,5 @@
 import { createReadStream } from 'node:fs';
-import OpenAI from 'openai';
-import { env } from '../config/env.js';
-
-const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+import { aiClient, AI_MODELS } from './aiClient.js';
 
 export interface TranscriptWord {
   word: string;
@@ -21,9 +18,9 @@ export interface TranscriptResult {
  * timestamps so we can render word-by-word animated captions later.
  */
 export async function transcribe(localMediaPath: string): Promise<TranscriptResult> {
-  const res = await openai.audio.transcriptions.create({
+  const res = await aiClient.audio.transcriptions.create({
     file: createReadStream(localMediaPath) as any,
-    model: env.OPENAI_TRANSCRIBE_MODEL,
+    model: AI_MODELS.transcribe,
     response_format: 'verbose_json',
     timestamp_granularities: ['word'],
   });

@@ -7,6 +7,7 @@ import clipsRouter from './routes/clips.js';
 import billingRouter, { webhookHandler } from './routes/billing.js';
 import adminRouter from './routes/admin.js';
 import analyticsRouter from './routes/analytics.js';
+import { aiConfigured, aiProviderName } from './services/aiClient.js';
 
 const app = express();
 
@@ -28,7 +29,8 @@ app.get('/health', (_req, res) =>
       stripePrice: !!env.STRIPE_PRICE_PRO_MONTHLY,
       stripeWebhook: !!env.STRIPE_WEBHOOK_SECRET,
       webUrl: env.WEB_URL,
-      openaiReal: !!env.OPENAI_API_KEY && env.OPENAI_API_KEY.startsWith('sk-'),
+      aiConfigured,
+      aiProvider: aiProviderName,
     },
   }),
 );
