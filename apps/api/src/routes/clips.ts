@@ -47,6 +47,7 @@ async function ensureRendered(clip: any): Promise<string> {
         endSec: Number(clip.end_sec),
         captions: clip.captions ?? [],
         style: clip.caption_style,
+        cropX: clip.crop_x != null ? Number(clip.crop_x) : 0.5,
       });
 
       const key = `renders/${clip.user_id}/${clip.video_id}/${clip.id}.mp4`;
@@ -101,7 +102,11 @@ const patchSchema = z.object({
   captions: z.array(z.object({ word: z.string(), start: z.number(), end: z.number() })).optional(),
   start_sec: z.number().nonnegative().optional(),
   end_sec: z.number().positive().optional(),
+  crop_x: z.number().min(0).max(1).optional(),
 });
+// Changing any of these makes an existing render stale → clear it so the next
+// export re-renders with the new look.
+const VISUAL_FIELDS = ['caption_style', 'captions', 'start_sec', 'end_sec', 'crop_x'];
 router.patch(
   '/:id',
   requireAuth,
@@ -117,6 +122,10 @@ router.patch(
       i++;
     }
     if (!fields.length) throw new ApiError(400, 'No fields to update');
+
+    if (Object.keys(body).some((k) => VISUAL_FIELDS.includes(k))) {
+      fields.push(`render_path = NULL`, `render_status = 'queued'`);
+    }
     values.push(req.params.id, req.user!.id);
 
     const { rows } = await query(

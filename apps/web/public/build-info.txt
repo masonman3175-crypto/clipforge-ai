@@ -1,2 +1,2 @@
-ClipForge AI — deploy marker (build 6)
-Cloudflare R2 storage support (no 50MB cap), Supabase fallback
+ClipForge AI — deploy marker (build 7)
+caption font (Anton) bundled + fontsdir; custom crop slider (crop_x)

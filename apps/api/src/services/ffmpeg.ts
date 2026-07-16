@@ -4,11 +4,21 @@ import ffprobeStatic from 'ffprobe-static';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from '../config/env.js';
 
 // Prefer explicit paths, else the npm-bundled static binaries.
 ffmpeg.setFfmpegPath(env.FFMPEG_PATH || (ffmpegStatic as unknown as string));
 ffmpeg.setFfprobePath(env.FFPROBE_PATH || ffprobeStatic.path);
+
+// Bundled caption font (Render/minimal Linux has no system fonts, so libass
+// would otherwise render captions invisibly). We ship Anton and point at it.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FONTS_DIR = path.resolve(__dirname, '../../assets/fonts');
+const CAPTION_FONT = 'Anton';
+
+/** Escape a path for use inside an ffmpeg filter argument. */
+const escFilterPath = (p: string) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
 
 export interface CaptionToken {
   word: string;
@@ -95,19 +105,23 @@ export async function renderVerticalClip(opts: {
   endSec: number;
   captions: CaptionToken[];
   style?: string;
+  cropX?: number; // horizontal crop position, 0 (left) … 1 (right); 0.5 = center
 }): Promise<string> {
   const { sourcePath, outPath, startSec, endSec, captions } = opts;
   const style = CAPTION_STYLES[opts.style ?? 'bold-center'] ?? CAPTION_STYLES['bold-center'];
   const duration = endSec - startSec;
+  const cropX = Math.min(1, Math.max(0, opts.cropX ?? 0.5));
 
   const workDir = await mkdtemp(path.join(tmpdir(), 'clipforge-'));
   const assPath = path.join(workDir, 'captions.ass');
   await writeFile(assPath, buildAss(captions, style), 'utf8');
 
   const vf = [
+    // Scale to cover the 9:16 frame, then crop a 1080-wide window whose
+    // horizontal offset the user controls (cropX): 0=left, 0.5=center, 1=right.
     'scale=1080:1920:force_original_aspect_ratio=increase',
-    'crop=1080:1920',
-    `subtitles='${assPath.replace(/\\/g, '/').replace(/:/g, '\\:')}'`,
+    `crop=1080:1920:(iw-1080)*${cropX.toFixed(4)}:0`,
+    `subtitles='${escFilterPath(assPath)}':fontsdir='${escFilterPath(FONTS_DIR)}'`,
   ].join(',');
 
   return new Promise((resolve, reject) => {
@@ -145,7 +159,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,${style.fontsize},${style.primary},${style.outline},&H80000000,${style.bold ? -1 : 0},6,2,2,60,60,520,1
+Style: Default,${CAPTION_FONT},${style.fontsize},${style.primary},${style.outline},&H80000000,${style.bold ? -1 : 0},6,2,2,60,60,520,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
