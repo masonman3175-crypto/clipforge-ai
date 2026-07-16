@@ -29,11 +29,16 @@ export interface CaptionToken {
   end: number;
 }
 
-const CAPTION_STYLES: Record<string, { fontsize: number; primary: string; outline: string; bold: boolean }> = {
-  'bold-center': { fontsize: 90, primary: '&H00FFFFFF', outline: '&H00000000', bold: true },
-  'karaoke-yellow': { fontsize: 88, primary: '&H0000FFFF', outline: '&H00000000', bold: true },
-  minimal: { fontsize: 72, primary: '&H00FFFFFF', outline: '&H80000000', bold: false },
-  'hormozi': { fontsize: 96, primary: '&H0000FF00', outline: '&H00000000', bold: true },
+// Colours are ASS BBGGRR hex (no alpha). `base` = normal words, `highlight` =
+// the currently-spoken word.
+const CAPTION_STYLES: Record<
+  string,
+  { fontsize: number; base: string; highlight: string; outline: string; bold: boolean }
+> = {
+  'bold-center': { fontsize: 92, base: 'FFFFFF', highlight: '00E5FF', outline: '000000', bold: true },
+  'karaoke-yellow': { fontsize: 92, base: 'FFFFFF', highlight: '00F0FF', outline: '000000', bold: true },
+  minimal: { fontsize: 78, base: 'FFFFFF', highlight: 'FFFFFF', outline: '000000', bold: false },
+  hormozi: { fontsize: 100, base: 'FFFFFF', highlight: '00FF00', outline: '000000', bold: true },
 };
 
 /** Probe a media file for duration + dimensions. */
@@ -120,9 +125,9 @@ export async function renderVerticalClip(opts: {
   await writeFile(assPath, buildAss(captions, style), 'utf8');
 
   const vf = [
-    // Scale to cover the 9:16 frame, then crop a 1080-wide window whose
-    // horizontal offset the user controls (cropX): 0=left, 0.5=center, 1=right.
-    'scale=1080:1920:force_original_aspect_ratio=increase',
+    // Scale to cover the 9:16 frame (lanczos = sharper), then crop a 1080-wide
+    // window whose horizontal offset the user controls (cropX).
+    'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos',
     `crop=1080:1920:(iw-1080)*${cropX.toFixed(4)}:0`,
     `subtitles='${escFilterPath(assPath)}':fontsdir='${escFilterPath(FONTS_DIR)}'`,
   ].join(',');
@@ -134,11 +139,11 @@ export async function renderVerticalClip(opts: {
       .videoFilters(vf)
       .outputOptions([
         '-c:v libx264',
-        '-preset ultrafast',
-        '-crf 23',
+        '-preset veryfast', // much better quality than ultrafast, still fast
+        '-crf 19', // lower = higher quality (visually near-lossless)
         '-pix_fmt yuv420p',
         '-c:a aac',
-        '-b:a 128k',
+        '-b:a 160k',
         '-movflags +faststart',
       ])
       .size('1080x1920')
@@ -148,33 +153,62 @@ export async function renderVerticalClip(opts: {
   });
 }
 
+/** Group word tokens into short phrases (≤ MAX words, split on pauses). */
+function chunkWords(caps: CaptionToken[], maxWords = 4, maxGap = 0.6): CaptionToken[][] {
+  const chunks: CaptionToken[][] = [];
+  let cur: CaptionToken[] = [];
+  for (const tok of caps) {
+    if (!tok.word || !tok.word.trim()) continue;
+    const prev = cur[cur.length - 1];
+    if (cur.length >= maxWords || (prev && tok.start - prev.end > maxGap)) {
+      if (cur.length) chunks.push(cur);
+      cur = [];
+    }
+    cur.push(tok);
+  }
+  if (cur.length) chunks.push(cur);
+  return chunks;
+}
+
+const sanitizeWord = (w: string) => w.replace(/[{}\\]/g, '').trim().toUpperCase();
+
 /**
- * Build an ASS subtitle document that reveals one word at a time (karaoke-style
- * pop). Each word gets a Dialogue line with a scale-up \t transform for the
- * "animated caption" effect.
+ * Build an ASS subtitle document with the modern viral-caption look: a short
+ * phrase (a few words) stays on screen together, and the word currently being
+ * spoken is highlighted in an accent colour. This avoids the old one-word,
+ * overlapping style.
  */
 function buildAss(captions: CaptionToken[], style: (typeof CAPTION_STYLES)[string]): string {
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
-WrapStyle: 2
+WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${CAPTION_FONT},${style.fontsize},${style.primary},${style.outline},&H80000000,${style.bold ? -1 : 0},6,2,2,60,60,520,1
+Style: Default,${CAPTION_FONT},${style.fontsize},&H00${style.base},&H00${style.outline},&H90000000,${style.bold ? -1 : 0},7,3,2,90,90,560,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
-  const lines = captions.map((tok) => {
-    const start = toAssTime(tok.start);
-    const end = toAssTime(tok.end + 0.15); // small hold after the word ends
-    const text = tok.word.replace(/[{}]/g, '').toUpperCase();
-    // Pop-in: start at 60% scale, animate to 100% over 120ms.
-    const animated = `{\\fscx60\\fscy60\\t(0,120,\\fscx100\\fscy100)}${text}`;
-    return `Dialogue: 0,${start},${end},Default,,0,0,0,,${animated}`;
-  });
+  const lines: string[] = [];
+  for (const chunk of chunkWords(captions)) {
+    for (let a = 0; a < chunk.length; a++) {
+      const start = toAssTime(chunk[a].start);
+      const end = toAssTime(a < chunk.length - 1 ? chunk[a + 1].start : chunk[a].end + 0.35);
+      // Full phrase shown; the active word is recoloured to the highlight colour.
+      const text = chunk
+        .map((w, j) => {
+          const W = sanitizeWord(w.word);
+          return j === a
+            ? `{\\c&H${style.highlight}&}${W}{\\c&H${style.base}&}`
+            : W;
+        })
+        .join(' ');
+      lines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`);
+    }
+  }
 
   return `${header}\n${lines.join('\n')}\n`;
 }
