@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 import { query } from '../db/pool.js';
-import { signedUrl, uploadFile } from '../services/storage.js';
+import { rm } from 'node:fs/promises';
+import { signedUrl, uploadFile, downloadTo } from '../services/storage.js';
 import { renderVerticalClip } from '../services/ffmpeg.js';
 
 const router = Router();
@@ -31,24 +32,30 @@ async function ensureRendered(clip: any): Promise<string> {
     const storagePath = source.rows[0]?.storage_path;
     if (!storagePath) throw new ApiError(409, 'Source video is no longer available to render from');
 
-    const sourceUrl = await signedUrl(storagePath, 3600);
     const workDir = await mkdtemp(path.join(tmpdir(), 'clipforge-export-'));
+    const localSource = path.join(workDir, `source${path.extname(storagePath) || '.mp4'}`);
     const outPath = path.join(workDir, `${clip.id}.mp4`);
 
     await query(`UPDATE clips SET render_status = 'rendering' WHERE id = $1`, [clip.id]);
-    await renderVerticalClip({
-      sourcePath: sourceUrl,
-      outPath,
-      startSec: Number(clip.start_sec),
-      endSec: Number(clip.end_sec),
-      captions: clip.captions ?? [],
-      style: clip.caption_style,
-    });
+    try {
+      // Bundled ffmpeg can't read remote URLs, so stream the source to disk first.
+      await downloadTo(storagePath, localSource);
+      await renderVerticalClip({
+        sourcePath: localSource,
+        outPath,
+        startSec: Number(clip.start_sec),
+        endSec: Number(clip.end_sec),
+        captions: clip.captions ?? [],
+        style: clip.caption_style,
+      });
 
-    const key = `renders/${clip.user_id}/${clip.video_id}/${clip.id}.mp4`;
-    await uploadFile(outPath, key, 'video/mp4');
-    await query(`UPDATE clips SET render_path = $2, render_status = 'ready' WHERE id = $1`, [clip.id, key]);
-    return key;
+      const key = `renders/${clip.user_id}/${clip.video_id}/${clip.id}.mp4`;
+      await uploadFile(outPath, key, 'video/mp4');
+      await query(`UPDATE clips SET render_path = $2, render_status = 'ready' WHERE id = $1`, [clip.id, key]);
+      return key;
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    }
   })().finally(() => renderingClips.delete(clip.id));
 
   renderingClips.set(clip.id, job);

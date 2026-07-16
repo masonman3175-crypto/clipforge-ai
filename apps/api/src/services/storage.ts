@@ -37,11 +37,20 @@ export async function signedUrl(storageKey: string, expiresInSec = 3600): Promis
 }
 
 /** Download a stored object to a local path (used by the render worker). */
+/**
+ * Stream a stored object to a local path via a signed URL. Streaming (rather
+ * than buffering the whole file in memory) keeps memory flat, so large
+ * multi-hundred-MB / GB videos download without OOM on small instances.
+ */
 export async function downloadTo(storageKey: string, localPath: string) {
-  const { data, error } = await supabaseAdmin.storage.from(BUCKET).download(storageKey);
-  if (error) throw new Error(`Storage download failed: ${error.message}`);
-  const { writeFile } = await import('node:fs/promises');
-  await writeFile(localPath, Buffer.from(await data.arrayBuffer()));
+  const url = await signedUrl(storageKey, 3600);
+  const res = await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`Storage download failed: HTTP ${res.status}`);
+
+  const { createWriteStream } = await import('node:fs');
+  const { pipeline } = await import('node:stream/promises');
+  const { Readable } = await import('node:stream');
+  await pipeline(Readable.fromWeb(res.body as any), createWriteStream(localPath));
   return localPath;
 }
 

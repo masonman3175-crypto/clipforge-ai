@@ -10,7 +10,7 @@ import {
   sliceTranscriptText,
 } from '../services/aiAnalysis.js';
 import { probe, extractAudio } from '../services/ffmpeg.js';
-import { signedUrl } from '../services/storage.js';
+import { downloadTo } from '../services/storage.js';
 import { downloadYouTube } from '../services/youtube.js';
 import { aiConfigured } from '../services/aiClient.js';
 
@@ -32,27 +32,27 @@ export async function processVideo(videoId: string): Promise<void> {
     }
     const video = await getVideo(videoId);
 
-    // 1. Resolve the source. Uploads stream straight from storage via a signed
-    //    URL (no multi-GB download to the server's disk); YouTube downloads local.
+    // 1. Get the source as a LOCAL file. The bundled ffmpeg/ffprobe binaries
+    //    crash reading remote URLs, so we stream the file to disk first (constant
+    //    memory). YouTube downloads locally too.
     const workDir = await mkdtemp(path.join(tmpdir(), 'clipforge-job-'));
-    let source: string;
+    let sourcePath: string;
 
     if (video.source === 'youtube') {
       const dl = await downloadYouTube(video.source_url);
-      source = dl.localPath;
+      sourcePath = dl.localPath;
       if (video.title === 'Processing…') {
         await query('UPDATE videos SET title = $2 WHERE id = $1', [videoId, dl.title]);
       }
     } else {
-      source = await signedUrl(video.storage_path, 3600);
+      sourcePath = path.join(workDir, `source${path.extname(video.storage_path) || '.mp4'}`);
+      await downloadTo(video.storage_path, sourcePath);
     }
 
-    // 2. Extract a small audio track (ffmpeg reads the URL fine), then read the
-    //    duration from that small LOCAL file — probing the remote URL directly
-    //    can crash the bundled ffprobe.
+    // 2. Extract a small audio track, then read duration from that local file.
     await setStatus(videoId, 'transcribing', 15);
     const audioPath = path.join(workDir, 'audio.mp3');
-    await extractAudio(source, audioPath);
+    await extractAudio(sourcePath, audioPath);
     const meta = await probe(audioPath);
     await query('UPDATE videos SET duration_sec = $2 WHERE id = $1', [videoId, meta.duration]);
 
