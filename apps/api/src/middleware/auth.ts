@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { query } from '../db/pool.js';
+import { supabaseAdmin } from '../services/storage.js';
 
 export interface AuthUser {
   id: string;
@@ -20,9 +20,11 @@ declare global {
 }
 
 /**
- * Verifies the Supabase-issued JWT from the `Authorization: Bearer <token>`
- * header, then upserts a local `users` row so our app tables can foreign-key
- * against it. Attaches the resolved user to `req.user`.
+ * Validates the Supabase-issued access token from `Authorization: Bearer <token>`
+ * by asking Supabase Auth to resolve it (`supabaseAdmin.auth.getUser`). This works
+ * with both legacy (HS256 shared-secret) and the newer asymmetric signing keys,
+ * so no local JWT secret is required. Then upserts a local `users` row so our app
+ * tables can foreign-key against it, and attaches the user to `req.user`.
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
@@ -32,13 +34,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     const token = header.slice('Bearer '.length);
 
-    // Supabase signs access tokens with the project JWT secret (HS256).
-    const payload = jwt.verify(token, env.SUPABASE_JWT_SECRET) as jwt.JwtPayload;
-    const id = payload.sub;
-    const email = (payload.email as string | undefined)?.toLowerCase();
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !data.user) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    const authUser = data.user;
+    const id = authUser.id;
+    const email = authUser.email?.toLowerCase();
     if (!id || !email) return res.status(401).json({ error: 'Invalid token claims' });
 
     const role: AuthUser['role'] = env.adminEmails.includes(email) ? 'admin' : 'user';
+    const meta = authUser.user_metadata as { full_name?: string; avatar_url?: string } | undefined;
 
     // Upsert keeps our mirror table in sync on every authenticated request.
     const { rows } = await query<AuthUser>(
@@ -48,13 +54,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
          SET email = EXCLUDED.email,
              role  = EXCLUDED.role
        RETURNING id, email, role, plan`,
-      [
-        id,
-        email,
-        (payload.user_metadata as any)?.full_name ?? null,
-        (payload.user_metadata as any)?.avatar_url ?? null,
-        role,
-      ],
+      [id, email, meta?.full_name ?? null, meta?.avatar_url ?? null, role],
     );
 
     req.user = rows[0];

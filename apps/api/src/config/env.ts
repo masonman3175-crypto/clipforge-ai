@@ -1,5 +1,13 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+
+// Load the repo-root .env (this file lives at apps/api/src/config, so root is 4 up).
+// In production (Render/Vercel) there is no .env file and platform env vars are
+// used instead — dotenv silently does nothing when the file is absent.
+const here = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(here, '../../../../.env') });
 
 /**
  * Centralised, validated environment config.
@@ -18,7 +26,8 @@ const schema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   SUPABASE_STORAGE_BUCKET: z.string().default('clipforge-media'),
-  SUPABASE_JWT_SECRET: z.string().min(1),
+  // No longer required: tokens are validated via supabaseAdmin.auth.getUser().
+  SUPABASE_JWT_SECRET: z.string().optional(),
 
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_TRANSCRIBE_MODEL: z.string().default('whisper-1'),
