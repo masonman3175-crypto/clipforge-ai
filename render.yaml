@@ -6,7 +6,7 @@ services:
   - type: web
     name: clipforge-api
     runtime: node
-    plan: starter            # 512MB is tight for rendering; upgrade for real load
+    plan: free               # $0 tier; sleeps after inactivity. Upgrade later for real load.
     rootDir: apps/api
     buildCommand: npm install && npm run build
     startCommand: npm start
