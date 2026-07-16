@@ -35,6 +35,7 @@ router.post(
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
+      payment_method_types: ['card'],
       line_items: [{ price: env.STRIPE_PRICE_PRO_MONTHLY, quantity: 1 }],
       success_url: `${env.WEB_URL}/dashboard/billing?status=success`,
       cancel_url: `${env.WEB_URL}/dashboard/billing?status=cancelled`,
