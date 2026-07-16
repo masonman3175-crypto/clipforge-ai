@@ -5,61 +5,60 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 /**
- * OAuth return handler.
+ * OAuth return handler (implicit flow, handled manually).
  *
- * With the implicit flow, Supabase returns the session token in the URL fragment
- * (#access_token=…). The supabase-js client parses it automatically on load
- * (detectSessionInUrl), so we poll for the resulting session and forward on.
- *
- * If Supabase instead returned an error (in the query string or the fragment),
- * we surface it verbatim so problems are diagnosable rather than silent.
+ * Supabase returns the session in the URL fragment:
+ *   /auth/callback#access_token=…&refresh_token=…&expires_in=…
+ * We read those tokens and set the session explicitly. If they aren't present,
+ * we surface exactly what the URL *did* contain, so any remaining problem is
+ * diagnosable instead of silent.
  */
 export default function AuthCallback() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Surface any provider/Supabase error returned in the URL.
-    const search = new URLSearchParams(window.location.search);
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const search = new URLSearchParams(window.location.search);
+
+    // 1. Provider/Supabase error?
     const urlError =
-      search.get('error_description') ||
-      search.get('error') ||
       hash.get('error_description') ||
-      hash.get('error');
+      search.get('error_description') ||
+      hash.get('error') ||
+      search.get('error');
     if (urlError) {
       setError(decodeURIComponent(urlError));
       return;
     }
 
-    let finished = false;
-    const go = () => {
-      if (!finished) {
-        finished = true;
-        router.replace('/dashboard');
-      }
-    };
+    // 2. Tokens in the fragment (implicit flow) → set the session directly.
+    const access_token = hash.get('access_token');
+    const refresh_token = hash.get('refresh_token');
+    if (access_token && refresh_token) {
+      supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
+        if (error) setError(error.message);
+        else router.replace('/dashboard');
+      });
+      return;
+    }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) go();
-    });
+    // 3. A PKCE code instead? Exchange it.
+    const code = search.get('code');
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) setError(`code exchange failed: ${error.message}`);
+        else router.replace('/dashboard');
+      });
+      return;
+    }
 
-    let tries = 0;
-    const interval = setInterval(async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        clearInterval(interval);
-        go();
-      } else if (++tries > 30) {
-        clearInterval(interval);
-        setError('Sign-in did not complete (no session returned). Please try again.');
-      }
-    }, 500);
-
-    return () => {
-      sub.subscription.unsubscribe();
-      clearInterval(interval);
-    };
+    // 4. Nothing usable — report what actually came back.
+    const hashKeys = [...hash.keys()];
+    const queryKeys = [...search.keys()];
+    setError(
+      `No login token was returned. The address contained — fragment: [${hashKeys.join(', ') || 'empty'}], query: [${queryKeys.join(', ') || 'empty'}].`,
+    );
   }, [router]);
 
   return (

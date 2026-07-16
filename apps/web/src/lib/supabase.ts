@@ -19,10 +19,10 @@ export const supabase = createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
-      // Implicit flow returns the token directly in the URL fragment — no stored
-      // code verifier to lose across the OAuth redirect. Most robust for a pure
-      // client-side SPA with no server session handling.
+      // We handle the OAuth return ourselves in /auth/callback (implicit flow →
+      // token in URL fragment) rather than relying on auto-detection, which was
+      // silently not producing a session in this setup.
+      detectSessionInUrl: false,
       flowType: 'implicit',
     },
   },
