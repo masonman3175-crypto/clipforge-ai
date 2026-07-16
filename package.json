@@ -1,0 +1,24 @@
+{
+  "name": "clipforge-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ClipForge AI — turn long-form videos into viral-ready TikTok, Reels, and Shorts.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev -w @clipforge/web\" \"npm run dev -w @clipforge/api\"",
+    "dev:web": "npm run dev -w @clipforge/web",
+    "dev:api": "npm run dev -w @clipforge/api",
+    "build": "npm run build -w @clipforge/api && npm run build -w @clipforge/web",
+    "db:migrate": "npm run migrate -w @clipforge/api",
+    "lint": "npm run lint -w @clipforge/web && npm run lint -w @clipforge/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

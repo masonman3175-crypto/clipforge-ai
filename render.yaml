@@ -1,0 +1,44 @@
+# Render Blueprint for the ClipForge API (Express + FFmpeg + yt-dlp).
+# Deploy: push this repo to GitHub → Render → New → Blueprint → pick the repo.
+# FFmpeg (ffmpeg-static) and yt-dlp (youtube-dl-exec) install correctly here
+# because Render runs npm install scripts normally.
+services:
+  - type: web
+    name: clipforge-api
+    runtime: node
+    plan: starter            # 512MB is tight for rendering; upgrade for real load
+    rootDir: apps/api
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT automatically; the API reads it (see config/env.ts).
+      - key: WEB_URL
+        sync: false           # set to your Vercel URL
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: clipforge-media
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_TRANSCRIBE_MODEL
+        value: whisper-1
+      - key: OPENAI_ANALYSIS_MODEL
+        value: gpt-4o-mini
+      - key: FREE_PLAN_VIDEOS_PER_MONTH
+        value: "3"
+      - key: MAX_UPLOAD_MB
+        value: "2048"
+      - key: ADMIN_EMAILS
+        sync: false

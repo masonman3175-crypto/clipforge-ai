@@ -1,0 +1,53 @@
+import 'dotenv/config';
+import { z } from 'zod';
+
+/**
+ * Centralised, validated environment config.
+ * Fails fast at boot if a required variable is missing so we never ship
+ * a half-configured server to production.
+ */
+const schema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Render/Heroku/etc inject PORT; fall back to API_PORT, then 4000.
+  PORT: z.coerce.number().optional(),
+  API_PORT: z.coerce.number().default(4000),
+  WEB_URL: z.string().url().default('http://localhost:3000'),
+
+  DATABASE_URL: z.string().min(1),
+
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  SUPABASE_STORAGE_BUCKET: z.string().default('clipforge-media'),
+  SUPABASE_JWT_SECRET: z.string().min(1),
+
+  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_TRANSCRIBE_MODEL: z.string().default('whisper-1'),
+  OPENAI_ANALYSIS_MODEL: z.string().default('gpt-4o-mini'),
+
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
+
+  FFMPEG_PATH: z.string().optional(),
+  FFPROBE_PATH: z.string().optional(),
+
+  FREE_PLAN_VIDEOS_PER_MONTH: z.coerce.number().default(3),
+  MAX_UPLOAD_MB: z.coerce.number().default(2048),
+
+  ADMIN_EMAILS: z.string().default(''),
+});
+
+const parsed = schema.safeParse(process.env);
+if (!parsed.success) {
+  console.error('❌ Invalid environment configuration:');
+  console.error(parsed.error.flatten().fieldErrors);
+  process.exit(1);
+}
+
+export const env = {
+  ...parsed.data,
+  // Effective listen port: platform-provided PORT wins over API_PORT.
+  API_PORT: parsed.data.PORT ?? parsed.data.API_PORT,
+  adminEmails: parsed.data.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+  isProd: parsed.data.NODE_ENV === 'production',
+};

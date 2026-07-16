@@ -1,0 +1,23 @@
+# Local Postgres for development. Supabase provides Postgres + Storage in prod.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clipforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clipforge
+      POSTGRES_PASSWORD: clipforge
+      POSTGRES_DB: clipforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - clipforge_pgdata:/var/lib/postgresql/data
+      - ./packages/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  clipforge_pgdata:
