@@ -18,7 +18,20 @@ app.post('/api/billing/webhook', ...webhookHandler);
 
 app.use(express.json({ limit: '2mb' }));
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'clipforge-api' }));
+app.get('/health', (_req, res) =>
+  res.json({
+    ok: true,
+    service: 'clipforge-api',
+    // Non-secret config presence flags, for diagnosing setup.
+    config: {
+      stripeKey: !!env.STRIPE_SECRET_KEY,
+      stripePrice: !!env.STRIPE_PRICE_PRO_MONTHLY,
+      stripeWebhook: !!env.STRIPE_WEBHOOK_SECRET,
+      webUrl: env.WEB_URL,
+      openaiReal: !!env.OPENAI_API_KEY && env.OPENAI_API_KEY.startsWith('sk-'),
+    },
+  }),
+);
 
 app.use('/api/videos', videosRouter);
 app.use('/api/clips', clipsRouter);
