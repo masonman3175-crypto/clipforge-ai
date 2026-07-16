@@ -1,2 +1,2 @@
-ClipForge AI — deploy marker
-login fixes: implicit OAuth flow + callback error surfacing
+ClipForge AI — deploy marker (build 2)
+login: manual OAuth token handling in /auth/callback (implicit flow)
