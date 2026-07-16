@@ -8,7 +8,8 @@ services:
     runtime: node
     plan: free               # $0 tier; sleeps after inactivity. Upgrade later for real load.
     rootDir: apps/api
-    buildCommand: npm install && npm run build
+    # --include=dev forces TypeScript/tsx to install even though NODE_ENV=production.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
