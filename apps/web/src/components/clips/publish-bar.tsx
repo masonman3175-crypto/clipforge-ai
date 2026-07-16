@@ -52,15 +52,22 @@ export function PublishBar({ clip }: { clip: any }) {
       // 1. Copy the platform caption so the user can paste it after upload.
       await navigator.clipboard.writeText(captionFor(p.key)).catch(() => {});
 
-      // 2. Get the export and download it (skip in demo where url is a '#...').
+      // 2. Get the export and download it. We fetch it as a blob first because
+      //    the file lives on R2 (a different origin), and browsers ignore the
+      //    <a download> attribute for cross-origin URLs — so a plain link would
+      //    just open the video instead of saving it.
       const { url } = await api<{ url: string }>(`/clips/${clip.id}/download`);
       if (url && !url.startsWith('#')) {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = objUrl;
         a.download = `clipforge-${p.key}-${clip.id}.mp4`;
         document.body.appendChild(a);
         a.click();
         a.remove();
+        URL.revokeObjectURL(objUrl);
       }
 
       // 3. Open the platform uploader in a new tab.

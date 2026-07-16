@@ -1,2 +1,2 @@
-ClipForge AI — deploy marker (build 7)
-caption font (Anton) bundled + fontsdir; custom crop slider (crop_x)
+ClipForge AI — deploy marker (build 8)
+blob download (cross-origin), font deploy check

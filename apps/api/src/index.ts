@@ -7,8 +7,10 @@ import clipsRouter from './routes/clips.js';
 import billingRouter, { webhookHandler } from './routes/billing.js';
 import adminRouter from './routes/admin.js';
 import analyticsRouter from './routes/analytics.js';
+import { existsSync } from 'node:fs';
 import { aiConfigured, aiProviderName } from './services/aiClient.js';
 import { storageBackend } from './services/storage.js';
+import { captionFontPath } from './services/ffmpeg.js';
 
 const app = express();
 
@@ -33,6 +35,7 @@ app.get('/health', (_req, res) =>
       aiConfigured,
       aiProvider: aiProviderName,
       storage: storageBackend,
+      fontDeployed: existsSync(captionFontPath),
     },
   }),
 );

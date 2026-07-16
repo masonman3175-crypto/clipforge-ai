@@ -17,6 +17,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.resolve(__dirname, '../../assets/fonts');
 const CAPTION_FONT = 'Anton';
 
+/** Absolute path to the bundled caption font (for a deploy sanity check). */
+export const captionFontPath = path.join(FONTS_DIR, 'caption.ttf');
+
 /** Escape a path for use inside an ffmpeg filter argument. */
 const escFilterPath = (p: string) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
 
