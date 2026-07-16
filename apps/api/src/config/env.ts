@@ -53,10 +53,23 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+// Strip stray non-printable/non-ASCII characters that sneak into secrets when
+// they're pasted into hosting dashboards. Every value below is plain ASCII, so
+// this only removes junk that would otherwise break auth headers / API calls.
+const clean = <T extends string | undefined>(s: T): T =>
+  (s == null ? s : (s.replace(/[^\x21-\x7E]/g, '') as T));
+
 export const env = {
   ...parsed.data,
   // Effective listen port: platform-provided PORT wins over API_PORT.
   API_PORT: parsed.data.PORT ?? parsed.data.API_PORT,
+  DATABASE_URL: clean(parsed.data.DATABASE_URL),
+  SUPABASE_URL: clean(parsed.data.SUPABASE_URL),
+  SUPABASE_SERVICE_ROLE_KEY: clean(parsed.data.SUPABASE_SERVICE_ROLE_KEY),
+  OPENAI_API_KEY: clean(parsed.data.OPENAI_API_KEY),
+  STRIPE_SECRET_KEY: clean(parsed.data.STRIPE_SECRET_KEY),
+  STRIPE_WEBHOOK_SECRET: clean(parsed.data.STRIPE_WEBHOOK_SECRET),
+  STRIPE_PRICE_PRO_MONTHLY: clean(parsed.data.STRIPE_PRICE_PRO_MONTHLY),
   adminEmails: parsed.data.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   isProd: parsed.data.NODE_ENV === 'production',
 };

@@ -33,6 +33,10 @@ app.get('/health', (_req, res) =>
       serviceKeyLen: (env.SUPABASE_SERVICE_ROLE_KEY || '').length,
       serviceKeyCleanLen: (env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/[^\x21-\x7E]/g, '').length,
       serviceKeyPrefix: (env.SUPABASE_SERVICE_ROLE_KEY || '').slice(0, 4),
+      stripeKeyRawLen: (process.env.STRIPE_SECRET_KEY || '').length,
+      stripeKeyCleanLen: (process.env.STRIPE_SECRET_KEY || '').replace(/[^\x21-\x7E]/g, '').length,
+      stripePriceRawLen: (process.env.STRIPE_PRICE_PRO_MONTHLY || '').length,
+      stripePriceCleanLen: (process.env.STRIPE_PRICE_PRO_MONTHLY || '').replace(/[^\x21-\x7E]/g, '').length,
     },
   }),
 );
