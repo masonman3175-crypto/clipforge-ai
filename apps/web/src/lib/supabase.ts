@@ -20,7 +20,10 @@ export const supabase = createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce',
+      // Implicit flow returns the token directly in the URL fragment — no stored
+      // code verifier to lose across the OAuth redirect. Most robust for a pure
+      // client-side SPA with no server session handling.
+      flowType: 'implicit',
     },
   },
 );

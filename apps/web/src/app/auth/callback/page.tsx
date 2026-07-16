@@ -5,16 +5,33 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 /**
- * OAuth return handler. The standard supabase-js client auto-exchanges the
- * `?code=` in the URL on load (detectSessionInUrl) using the localStorage code
- * verifier, so we must NOT exchange it again. We simply poll for the resulting
- * session (up to ~15s) and forward to the dashboard once it appears.
+ * OAuth return handler.
+ *
+ * With the implicit flow, Supabase returns the session token in the URL fragment
+ * (#access_token=…). The supabase-js client parses it automatically on load
+ * (detectSessionInUrl), so we poll for the resulting session and forward on.
+ *
+ * If Supabase instead returned an error (in the query string or the fragment),
+ * we surface it verbatim so problems are diagnosable rather than silent.
  */
 export default function AuthCallback() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Surface any provider/Supabase error returned in the URL.
+    const search = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const urlError =
+      search.get('error_description') ||
+      search.get('error') ||
+      hash.get('error_description') ||
+      hash.get('error');
+    if (urlError) {
+      setError(decodeURIComponent(urlError));
+      return;
+    }
+
     let finished = false;
     const go = () => {
       if (!finished) {
@@ -23,12 +40,10 @@ export default function AuthCallback() {
       }
     };
 
-    // Fires as soon as the auto-exchange completes.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) go();
     });
 
-    // Poll as a backup (covers timing/races), up to ~15 seconds.
     let tries = 0;
     const interval = setInterval(async () => {
       const { data } = await supabase.auth.getSession();
@@ -37,7 +52,7 @@ export default function AuthCallback() {
         go();
       } else if (++tries > 30) {
         clearInterval(interval);
-        setError('Sign-in did not complete. Please try again.');
+        setError('Sign-in did not complete (no session returned). Please try again.');
       }
     }, 500);
 
@@ -50,8 +65,9 @@ export default function AuthCallback() {
   return (
     <main className="glow-bg flex min-h-screen items-center justify-center px-6 text-center">
       {error ? (
-        <div className="space-y-2">
-          <p className="text-destructive">{error}</p>
+        <div className="max-w-md space-y-2">
+          <p className="font-medium text-destructive">Sign-in error</p>
+          <p className="text-sm text-muted-foreground">{error}</p>
           <a href="/sign-in" className="text-primary">Back to sign in</a>
         </div>
       ) : (
