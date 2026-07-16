@@ -47,13 +47,15 @@ export async function processVideo(videoId: string): Promise<void> {
       source = await signedUrl(video.storage_path, 3600);
     }
 
-    const meta = await probe(source);
-    await query('UPDATE videos SET duration_sec = $2 WHERE id = $1', [videoId, meta.duration]);
-
-    // 2. Extract a small audio track, then transcribe it (chunked for long audio).
+    // 2. Extract a small audio track (ffmpeg reads the URL fine), then read the
+    //    duration from that small LOCAL file — probing the remote URL directly
+    //    can crash the bundled ffprobe.
     await setStatus(videoId, 'transcribing', 15);
     const audioPath = path.join(workDir, 'audio.mp3');
     await extractAudio(source, audioPath);
+    const meta = await probe(audioPath);
+    await query('UPDATE videos SET duration_sec = $2 WHERE id = $1', [videoId, meta.duration]);
+
     const transcript = await transcribe(audioPath, meta.duration);
     await query(
       `INSERT INTO transcripts (video_id, language, text, words)
