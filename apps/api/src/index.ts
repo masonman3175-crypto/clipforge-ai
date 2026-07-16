@@ -29,6 +29,10 @@ app.get('/health', (_req, res) =>
       stripeWebhook: !!env.STRIPE_WEBHOOK_SECRET,
       webUrl: env.WEB_URL,
       openaiReal: !!env.OPENAI_API_KEY && env.OPENAI_API_KEY.startsWith('sk-'),
+      supabaseUrl: env.SUPABASE_URL,
+      serviceKeyLen: (env.SUPABASE_SERVICE_ROLE_KEY || '').length,
+      serviceKeyCleanLen: (env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/[^\x21-\x7E]/g, '').length,
+      serviceKeyPrefix: (env.SUPABASE_SERVICE_ROLE_KEY || '').slice(0, 4),
     },
   }),
 );

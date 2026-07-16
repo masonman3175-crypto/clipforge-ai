@@ -7,7 +7,11 @@ import { env } from '../config/env.js';
  * Server-side Supabase client using the service-role key.
  * NEVER expose this client or key to the browser — it bypasses RLS.
  */
-export const supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+// Strip stray non-printable/non-ASCII characters that can sneak into env values
+// pasted into hosting dashboards and silently break auth headers.
+const clean = (s: string) => (s || '').replace(/[^\x21-\x7E]/g, '');
+
+export const supabaseAdmin = createClient(clean(env.SUPABASE_URL), clean(env.SUPABASE_SERVICE_ROLE_KEY), {
   auth: { persistSession: false },
 });
 
