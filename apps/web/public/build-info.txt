@@ -1,2 +1,2 @@
-ClipForge AI — deploy marker (build 3)
-fix: strip stray non-ASCII chars from keys/tokens (ISO-8859-1 header error)
+ClipForge AI — deploy marker (build 4)
+rebuild to pick up corrected NEXT_PUBLIC_SUPABASE_ANON_KEY
