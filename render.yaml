@@ -43,3 +43,11 @@ services:
         value: "2048"
       - key: ADMIN_EMAILS
         sync: false
+      # Stripe — declared here (sync:false = value set in the Render dashboard,
+      # kept out of git) so Blueprint syncs never wipe them again.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_PRO_MONTHLY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
