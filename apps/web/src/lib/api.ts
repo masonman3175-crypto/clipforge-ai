@@ -1,6 +1,6 @@
 'use client';
 
-import { supabase } from './supabase';
+import { supabase, cleanToken } from './supabase';
 import { IS_DEMO, demoResponse } from './demo';
 
 /**
@@ -10,7 +10,7 @@ import { IS_DEMO, demoResponse } from './demo';
  */
 async function authHeaders(): Promise<HeadersInit> {
   const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  const token = cleanToken(data.session?.access_token);
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -72,7 +72,7 @@ export function uploadVideo(
     const { data } = await supabase.auth.getSession();
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/videos');
-    xhr.setRequestHeader('Authorization', `Bearer ${data.session?.access_token ?? ''}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${cleanToken(data.session?.access_token)}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };

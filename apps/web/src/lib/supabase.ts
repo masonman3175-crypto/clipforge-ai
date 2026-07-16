@@ -3,27 +3,25 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Standard browser Supabase client for a client-rendered SPA.
- *
- * We use `@supabase/supabase-js` `createClient` (localStorage-backed) rather than
- * `@supabase/ssr`'s cookie client, because this app guards routes on the client
- * and has no server-side session handling. The standard client reliably:
- *   - stores the PKCE code verifier in localStorage (survives the OAuth redirect),
- *   - auto-detects and exchanges the `?code=` on the callback page,
- *   - persists + refreshes the session.
+ * Strip any stray non-printable / non-ASCII characters. These can sneak into
+ * environment values via copy-paste into hosting dashboards (zero-width spaces,
+ * non-breaking spaces, smart quotes, stray newlines) and then break the HTTP
+ * `apikey` / `Authorization` headers with:
+ *   "String contains non ISO-8859-1 code point".
+ * A valid Supabase URL or key is plain printable ASCII, so this only removes junk.
  */
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      // We handle the OAuth return ourselves in /auth/callback (implicit flow →
-      // token in URL fragment) rather than relying on auto-detection, which was
-      // silently not producing a session in this setup.
-      detectSessionInUrl: false,
-      flowType: 'implicit',
-    },
+export const cleanToken = (s: string | undefined | null) => (s || '').replace(/[^\x21-\x7E]/g, '');
+
+const url = cleanToken(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const anonKey = cleanToken(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+export const supabase = createClient(url, anonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    // We handle the OAuth return ourselves in /auth/callback (implicit flow →
+    // token in URL fragment) rather than relying on auto-detection.
+    detectSessionInUrl: false,
+    flowType: 'implicit',
   },
-);
+});

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabase, cleanToken } from '@/lib/supabase';
 
 /**
  * OAuth return handler (implicit flow, handled manually).
@@ -33,13 +33,16 @@ export default function AuthCallback() {
     }
 
     // 2. Tokens in the fragment (implicit flow) → set the session directly.
-    const access_token = hash.get('access_token');
-    const refresh_token = hash.get('refresh_token');
+    const access_token = cleanToken(hash.get('access_token'));
+    const refresh_token = cleanToken(hash.get('refresh_token'));
     if (access_token && refresh_token) {
-      supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
-        if (error) setError(error.message);
-        else router.replace('/dashboard');
-      });
+      supabase.auth
+        .setSession({ access_token, refresh_token })
+        .then(({ error }) => {
+          if (error) setError(`${error.message}`);
+          else router.replace('/dashboard');
+        })
+        .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
       return;
     }
 

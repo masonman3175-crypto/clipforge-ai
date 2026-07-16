@@ -1,2 +1,2 @@
-ClipForge AI — deploy marker (build 2)
-login: manual OAuth token handling in /auth/callback (implicit flow)
+ClipForge AI — deploy marker (build 3)
+fix: strip stray non-ASCII chars from keys/tokens (ISO-8859-1 header error)
