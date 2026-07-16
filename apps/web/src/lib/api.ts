@@ -45,8 +45,14 @@ export class ApiError extends Error {
   }
 }
 
-/** Upload a file with progress via XHR (fetch has no upload-progress events). */
-export function uploadVideo(
+/**
+ * Upload a video by streaming it DIRECTLY to Supabase Storage (not through our
+ * API/proxy), so large files aren't blocked by request-size limits:
+ *   1. ask the API for a signed upload URL
+ *   2. PUT the file straight to Supabase (with progress)
+ *   3. tell the API to start processing
+ */
+export async function uploadVideo(
   file: File,
   title: string,
   onProgress: (pct: number) => void,
@@ -64,23 +70,28 @@ export function uploadVideo(
       }, 250);
     });
   }
-  return new Promise(async (resolve, reject) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('title', title);
 
-    const { data } = await supabase.auth.getSession();
+  const ext = '.' + (file.name.split('.').pop() || 'mp4');
+  const init = await api<{ id: string; signedUrl: string; token: string; path: string }>(
+    '/videos/upload-init',
+    { method: 'POST', body: JSON.stringify({ title, ext }) },
+  );
+
+  // PUT the file straight to Supabase Storage's signed upload URL, with progress.
+  await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/videos');
-    xhr.setRequestHeader('Authorization', `Bearer ${cleanToken(data.session?.access_token)}`);
+    xhr.open('PUT', init.signedUrl);
+    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+    xhr.setRequestHeader('x-upsert', 'true');
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.onload = () =>
-      xhr.status < 300
-        ? resolve(JSON.parse(xhr.responseText))
-        : reject(new ApiError(xhr.status, xhr.responseText));
-    xhr.onerror = () => reject(new ApiError(0, 'Network error'));
-    xhr.send(form);
+      xhr.status < 300 ? resolve() : reject(new ApiError(xhr.status, xhr.responseText || 'Upload failed'));
+    xhr.onerror = () => reject(new ApiError(0, 'Upload network error'));
+    xhr.send(file);
   });
+
+  await api(`/videos/${init.id}/process`, { method: 'POST' });
+  return { id: init.id };
 }

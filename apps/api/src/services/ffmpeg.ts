@@ -39,9 +39,54 @@ export function probe(filePath: string): Promise<{ duration: number; width: numb
 }
 
 /**
+ * Extract a small, transcription-friendly audio track (16kHz mono, low bitrate).
+ * This keeps files tiny (~14MB/hour) so long videos fit transcription limits and
+ * upload/transcribe fast. `source` may be a local path or an HTTP(S) URL.
+ */
+export function extractAudio(source: string, outPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(source)
+      .noVideo()
+      .audioChannels(1)
+      .audioFrequency(16000)
+      .audioBitrate('32k')
+      .format('mp3')
+      .on('end', () => resolve(outPath))
+      .on('error', (err) => reject(new Error(`Audio extract failed: ${err.message}`)))
+      .save(outPath);
+  });
+}
+
+/** Extract a [startSec, startSec+durationSec] slice of audio as 16kHz mono mp3. */
+export function extractAudioSegment(
+  source: string,
+  outPath: string,
+  startSec: number,
+  durationSec: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(source)
+      .seekInput(startSec)
+      .duration(durationSec)
+      .noVideo()
+      .audioChannels(1)
+      .audioFrequency(16000)
+      .audioBitrate('32k')
+      .format('mp3')
+      .on('end', () => resolve(outPath))
+      .on('error', (err) => reject(new Error(`Audio segment failed: ${err.message}`)))
+      .save(outPath);
+  });
+}
+
+/**
  * Render a 1080x1920 vertical clip from [start, end] of the source, cropping to
- * a 9:16 center frame and burning in word-by-word animated captions via an ASS
- * subtitle file. Returns the output path.
+ * a 9:16 center frame and burning in word-by-word animated captions.
+ *
+ * `source` may be a local path OR a signed HTTP(S) URL — we seek on the INPUT
+ * (`seekInput`) so FFmpeg jumps straight to the clip via HTTP range requests
+ * instead of downloading/decoding the whole (possibly hours-long) file.
+ * `ultrafast` preset keeps it viable on small/free compute.
  */
 export async function renderVerticalClip(opts: {
   sourcePath: string;
@@ -59,7 +104,6 @@ export async function renderVerticalClip(opts: {
   const assPath = path.join(workDir, 'captions.ass');
   await writeFile(assPath, buildAss(captions, style), 'utf8');
 
-  // Scale to cover 1080x1920 then center-crop → true vertical without letterboxing.
   const vf = [
     'scale=1080:1920:force_original_aspect_ratio=increase',
     'crop=1080:1920',
@@ -68,13 +112,13 @@ export async function renderVerticalClip(opts: {
 
   return new Promise((resolve, reject) => {
     ffmpeg(sourcePath)
-      .setStartTime(startSec)
-      .setDuration(duration)
+      .seekInput(startSec) // fast input seek (before -i) — key for long sources
+      .duration(duration)
       .videoFilters(vf)
       .outputOptions([
         '-c:v libx264',
-        '-preset veryfast',
-        '-crf 20',
+        '-preset ultrafast',
+        '-crf 23',
         '-pix_fmt yuv420p',
         '-c:a aac',
         '-b:a 128k',

@@ -1,11 +1,59 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import path from 'node:path';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 import { query } from '../db/pool.js';
-import { signedUrl } from '../services/storage.js';
+import { signedUrl, uploadFile } from '../services/storage.js';
+import { renderVerticalClip } from '../services/ffmpeg.js';
 
 const router = Router();
+
+// Prevents two concurrent export requests from rendering the same clip twice.
+const renderingClips = new Map<string, Promise<string>>();
+
+/**
+ * Render a clip on demand (if not already rendered) and return its storage key.
+ * Reads the source via a signed URL with input-seeking, so it never downloads
+ * the whole (possibly hours-long) source — just the clip's window.
+ */
+async function ensureRendered(clip: any): Promise<string> {
+  if (clip.render_path) return clip.render_path;
+  if (renderingClips.has(clip.id)) return renderingClips.get(clip.id)!;
+
+  const job = (async () => {
+    const source = await query<{ storage_path: string | null }>(
+      'SELECT storage_path FROM videos WHERE id = $1',
+      [clip.video_id],
+    );
+    const storagePath = source.rows[0]?.storage_path;
+    if (!storagePath) throw new ApiError(409, 'Source video is no longer available to render from');
+
+    const sourceUrl = await signedUrl(storagePath, 3600);
+    const workDir = await mkdtemp(path.join(tmpdir(), 'clipforge-export-'));
+    const outPath = path.join(workDir, `${clip.id}.mp4`);
+
+    await query(`UPDATE clips SET render_status = 'rendering' WHERE id = $1`, [clip.id]);
+    await renderVerticalClip({
+      sourcePath: sourceUrl,
+      outPath,
+      startSec: Number(clip.start_sec),
+      endSec: Number(clip.end_sec),
+      captions: clip.captions ?? [],
+      style: clip.caption_style,
+    });
+
+    const key = `renders/${clip.user_id}/${clip.video_id}/${clip.id}.mp4`;
+    await uploadFile(outPath, key, 'video/mp4');
+    await query(`UPDATE clips SET render_path = $2, render_status = 'ready' WHERE id = $1`, [clip.id, key]);
+    return key;
+  })().finally(() => renderingClips.delete(clip.id));
+
+  renderingClips.set(clip.id, job);
+  return job;
+}
 
 /** GET /api/clips — all clips for the current user (Generated Clips page). */
 router.get(
@@ -73,24 +121,29 @@ router.patch(
   }),
 );
 
-/** GET /api/clips/:id/download — signed URL + record an export usage event. */
+/**
+ * GET /api/clips/:id/download — render the clip on demand (if needed), then
+ * return a signed URL and record an export usage event. May take ~10–30s the
+ * first time a given clip is exported; instant afterwards (cached render).
+ */
 router.get(
   '/:id/download',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { rows } = await query<{ render_path: string | null; caption_style: string }>(
-      `SELECT render_path, caption_style FROM clips WHERE id = $1 AND user_id = $2`,
+    const { rows } = await query(
+      `SELECT * FROM clips WHERE id = $1 AND user_id = $2`,
       [req.params.id, req.user!.id],
     );
     const clip = rows[0];
     if (!clip) throw new ApiError(404, 'Clip not found');
-    if (!clip.render_path) throw new ApiError(409, 'Clip is still rendering');
+
+    const renderPath = await ensureRendered(clip);
 
     await query(
       `INSERT INTO usage_events (user_id, kind, caption_style) VALUES ($1, 'clip_exported', $2)`,
       [req.user!.id, clip.caption_style],
     );
-    const url = await signedUrl(clip.render_path, 600);
+    const url = await signedUrl(renderPath, 600);
     res.json({ url });
   }),
 );

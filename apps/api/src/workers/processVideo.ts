@@ -9,10 +9,9 @@ import {
   buildCaptions,
   sliceTranscriptText,
 } from '../services/aiAnalysis.js';
-import { renderVerticalClip } from '../services/ffmpeg.js';
-import { downloadTo, uploadFile } from '../services/storage.js';
+import { probe, extractAudio } from '../services/ffmpeg.js';
+import { signedUrl } from '../services/storage.js';
 import { downloadYouTube } from '../services/youtube.js';
-import { probe } from '../services/ffmpeg.js';
 import { aiConfigured } from '../services/aiClient.js';
 
 /**
@@ -33,26 +32,29 @@ export async function processVideo(videoId: string): Promise<void> {
     }
     const video = await getVideo(videoId);
 
-    // 1. Get a local copy of the source (upload from storage, or YouTube DL).
+    // 1. Resolve the source. Uploads stream straight from storage via a signed
+    //    URL (no multi-GB download to the server's disk); YouTube downloads local.
     const workDir = await mkdtemp(path.join(tmpdir(), 'clipforge-job-'));
-    let sourcePath = path.join(workDir, 'source.mp4');
+    let source: string;
 
     if (video.source === 'youtube') {
       const dl = await downloadYouTube(video.source_url);
-      sourcePath = dl.localPath;
+      source = dl.localPath;
       if (video.title === 'Processing…') {
         await query('UPDATE videos SET title = $2 WHERE id = $1', [videoId, dl.title]);
       }
     } else {
-      await downloadTo(video.storage_path, sourcePath);
+      source = await signedUrl(video.storage_path, 3600);
     }
 
-    const meta = await probe(sourcePath);
+    const meta = await probe(source);
     await query('UPDATE videos SET duration_sec = $2 WHERE id = $1', [videoId, meta.duration]);
 
-    // 2. Transcribe.
+    // 2. Extract a small audio track, then transcribe it (chunked for long audio).
     await setStatus(videoId, 'transcribing', 15);
-    const transcript = await transcribe(sourcePath);
+    const audioPath = path.join(workDir, 'audio.mp3');
+    await extractAudio(source, audioPath);
+    const transcript = await transcribe(audioPath, meta.duration);
     await query(
       `INSERT INTO transcripts (video_id, language, text, words)
          VALUES ($1, $2, $3, $4)
@@ -62,43 +64,18 @@ export async function processVideo(videoId: string): Promise<void> {
     );
 
     // 3. Detect the best clips.
-    await setStatus(videoId, 'analyzing', 45);
+    await setStatus(videoId, 'analyzing', 55);
     const detected = await detectClips(transcript.text, transcript.words, 10);
 
-    // 4. Persist clips + generate creative assets + render vertical exports.
-    await setStatus(videoId, 'rendering', 60);
-    let done = 0;
+    // 4. Persist clips + creative assets. Rendering is done ON DEMAND when the
+    //    user exports a clip (see routes/clips.ts) — far lighter than rendering
+    //    all 10 up front, and it makes long videos feasible on modest compute.
+    await setStatus(videoId, 'analyzing', 75);
     for (const clip of detected) {
       const clipText = sliceTranscriptText(transcript.words, clip.start_sec, clip.end_sec);
       const captions = buildCaptions(transcript.words, clip.start_sec, clip.end_sec);
       const assets = await generateClipAssets(clipText || clip.reason, clip.category);
-
-      const clipRow = await insertClip(video.user_id, videoId, clip, clipText, captions, assets);
-
-      // Render 1080x1920 export with burned-in captions and upload it.
-      try {
-        const outPath = path.join(workDir, `${clipRow.id}.mp4`);
-        await renderVerticalClip({
-          sourcePath,
-          outPath,
-          startSec: clip.start_sec,
-          endSec: clip.end_sec,
-          captions,
-          style: 'bold-center',
-        });
-        const key = `renders/${video.user_id}/${videoId}/${clipRow.id}.mp4`;
-        await uploadFile(outPath, key, 'video/mp4');
-        await query(
-          `UPDATE clips SET render_path = $2, render_status = 'ready' WHERE id = $1`,
-          [clipRow.id, key],
-        );
-      } catch (renderErr) {
-        console.error(`Render failed for clip ${clipRow.id}:`, renderErr);
-        await query(`UPDATE clips SET render_status = 'failed' WHERE id = $1`, [clipRow.id]);
-      }
-
-      done += 1;
-      await setStatus(videoId, 'rendering', 60 + Math.round((done / detected.length) * 35));
+      await insertClip(video.user_id, videoId, clip, clipText, captions, assets);
     }
 
     // 5. Done — record usage for quota + analytics.

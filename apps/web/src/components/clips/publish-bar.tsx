@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Check, ExternalLink, Copy } from 'lucide-react';
+import { Download, Check, ExternalLink, Copy, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 
@@ -35,7 +35,6 @@ const PLATFORMS = [
 export function PublishBar({ clip }: { clip: any }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const ready = clip.render_status === 'ready';
 
   function captionFor(key: 'tiktok' | 'reel' | 'shorts') {
     const title = clip.titles?.[key] ?? clip.title;
@@ -85,28 +84,36 @@ export function PublishBar({ clip }: { clip: any }) {
         {PLATFORMS.map((p) => (
           <button
             key={p.key}
-            disabled={!ready || busy === p.key}
+            disabled={busy !== null}
             onClick={() => publish(p)}
             className={`flex flex-col items-center gap-1 rounded-md border border-border bg-background px-3 py-3 text-sm transition-colors disabled:opacity-50 ${p.color}`}
           >
             <span className="flex items-center gap-1.5 font-medium">
-              {done === p.key ? <Check className="h-4 w-4 text-emerald-400" /> : <Download className="h-4 w-4" />}
+              {busy === p.key ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : done === p.key ? (
+                <Check className="h-4 w-4 text-emerald-400" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
               {p.label}
             </span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <ExternalLink className="h-3 w-3" /> download + open
+              <ExternalLink className="h-3 w-3" /> {busy === p.key ? 'rendering…' : 'download + open'}
             </span>
           </button>
         ))}
       </div>
 
-      {done && (
+      {busy && (
+        <p className="text-xs text-muted-foreground">
+          Rendering your 1080×1920 clip with captions… this takes ~10–30s the first time.
+        </p>
+      )}
+      {done && !busy && (
         <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
           ✓ Clip downloaded and caption copied to your clipboard. Paste it into the {PLATFORMS.find((p) => p.key === done)?.label} uploader that just opened.
         </p>
-      )}
-      {!ready && (
-        <p className="text-xs text-amber-400">This clip is still rendering — publishing unlocks when it’s ready.</p>
       )}
 
       {/* Caption preview */}

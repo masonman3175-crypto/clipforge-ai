@@ -18,11 +18,6 @@ export function ClipCard({ clip }: { clip: any }) {
           <span className="absolute right-2 top-2 rounded bg-black/50 px-1.5 py-0.5 text-xs text-white">
             {formatDuration(clip.end_sec - clip.start_sec)}
           </span>
-          {clip.render_status !== 'ready' && (
-            <span className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-amber-300">
-              rendering…
-            </span>
-          )}
         </div>
         <div className="flex items-center justify-between gap-2">
           <Badge variant={(categoryColor[clip.category] as any) ?? 'muted'}>{clip.category}</Badge>

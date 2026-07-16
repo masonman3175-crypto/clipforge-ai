@@ -6,11 +6,58 @@ import { requireAuth } from '../middleware/auth.js';
 import { enforceVideoQuota } from '../middleware/quota.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 import { query } from '../db/pool.js';
-import { uploadFile, signedUrl } from '../services/storage.js';
+import { uploadFile, signedUrl, supabaseAdmin } from '../services/storage.js';
 import { env } from '../config/env.js';
 import { processVideo } from '../workers/processVideo.js';
 
 const router = Router();
+
+/**
+ * POST /api/videos/upload-init — create the video row and return a signed URL
+ * for the browser to upload the file DIRECTLY to Supabase Storage. This bypasses
+ * the request-size limits of the web proxy/API server, so large (1–2 hour)
+ * videos can be uploaded.
+ */
+const initSchema = z.object({ title: z.string().min(1), ext: z.string().default('.mp4') });
+router.post(
+  '/upload-init',
+  requireAuth,
+  enforceVideoQuota,
+  asyncHandler(async (req, res) => {
+    const user = req.user!;
+    const { title, ext } = initSchema.parse(req.body);
+
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO videos (user_id, title, source, status) VALUES ($1, $2, 'upload', 'queued') RETURNING id`,
+      [user.id, title],
+    );
+    const videoId = rows[0].id;
+    const storageKey = `sources/${user.id}/${videoId}${ext.startsWith('.') ? ext : '.' + ext}`;
+
+    const { data, error } = await supabaseAdmin.storage
+      .from(env.SUPABASE_STORAGE_BUCKET)
+      .createSignedUploadUrl(storageKey);
+    if (error) throw new ApiError(500, `Could not create upload URL: ${error.message}`);
+
+    await query('UPDATE videos SET storage_path = $2 WHERE id = $1', [videoId, storageKey]);
+    res.json({ id: videoId, signedUrl: data.signedUrl, token: data.token, path: data.path });
+  }),
+);
+
+/** POST /api/videos/:id/process — start processing after a direct upload. */
+router.post(
+  '/:id/process',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { rows } = await query<{ id: string }>(
+      `SELECT id FROM videos WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user!.id],
+    );
+    if (!rows[0]) throw new ApiError(404, 'Video not found');
+    void processVideo(req.params.id);
+    res.status(202).json({ id: req.params.id, status: 'queued' });
+  }),
+);
 const upload = multer({
   storage: multer.diskStorage({}),
   limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024 },
