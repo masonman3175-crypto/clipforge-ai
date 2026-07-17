@@ -1,2 +1,2 @@
-ClipForge AI — deploy marker (build 9)
-blurred-bezel fit layout, async background render + polling, better captions
+ClipForge AI — deploy marker (build 10)
+license-code redemption system

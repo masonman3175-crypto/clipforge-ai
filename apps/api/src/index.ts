@@ -7,6 +7,7 @@ import clipsRouter from './routes/clips.js';
 import billingRouter, { webhookHandler } from './routes/billing.js';
 import adminRouter from './routes/admin.js';
 import analyticsRouter from './routes/analytics.js';
+import licensesRouter from './routes/licenses.js';
 import { existsSync } from 'node:fs';
 import { aiConfigured, aiProviderName } from './services/aiClient.js';
 import { storageBackend } from './services/storage.js';
@@ -45,6 +46,7 @@ app.use('/api/clips', clipsRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/licenses', licensesRouter);
 
 app.use(errorHandler);
 

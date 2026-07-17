@@ -1,17 +1,36 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Crown } from 'lucide-react';
-import { api } from '@/lib/api';
+import { Check, Crown, KeyRound } from 'lucide-react';
+import { api, ApiError } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/misc';
+import { Badge, Input } from '@/components/ui/misc';
 
 export default function BillingPage() {
   const [plan, setPlan] = useState<'free' | 'pro'>('free');
   const [loading, setLoading] = useState(false);
+  const [code, setCode] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemMsg, setRedeemMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => { api<{ plan: 'free' | 'pro' }>('/analytics/me').then((m) => setPlan(m.plan)); }, []);
+
+  async function redeem() {
+    setRedeeming(true);
+    setRedeemMsg(null);
+    try {
+      await api('/licenses/redeem', { method: 'POST', body: JSON.stringify({ code }) });
+      setPlan('pro');
+      setCode('');
+      setRedeemMsg({ ok: true, text: "🎉 Redeemed! You're now on Pro with unlimited access." });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Could not redeem this code';
+      setRedeemMsg({ ok: false, text: msg });
+    } finally {
+      setRedeeming(false);
+    }
+  }
 
   async function upgrade() {
     setLoading(true);
@@ -73,6 +92,34 @@ export default function BillingPage() {
           </Card>
         ))}
       </div>
+
+      {/* Redeem a license code */}
+      {plan === 'free' && (
+        <Card>
+          <CardContent className="space-y-3 pt-6">
+            <div className="flex items-center gap-2 font-medium">
+              <KeyRound className="h-4 w-4 text-primary" /> Have a license code?
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Enter the code you received to unlock unlimited (Pro) access.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                placeholder="CLIP-XXXX-XXXX"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                className="font-mono uppercase"
+              />
+              <Button onClick={redeem} disabled={redeeming || code.trim().length < 4}>
+                {redeeming ? 'Redeeming…' : 'Redeem'}
+              </Button>
+            </div>
+            {redeemMsg && (
+              <p className={`text-sm ${redeemMsg.ok ? 'text-emerald-400' : 'text-destructive'}`}>{redeemMsg.text}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
