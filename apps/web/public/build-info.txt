@@ -1,2 +1,2 @@
-ClipForge AI — deploy marker (build 8)
-blob download (cross-origin), font deploy check
+ClipForge AI — deploy marker (build 9)
+blurred-bezel fit layout, async background render + polling, better captions

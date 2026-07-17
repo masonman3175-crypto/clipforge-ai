@@ -48,12 +48,16 @@ async function ensureRendered(clip: any): Promise<string> {
         captions: clip.captions ?? [],
         style: clip.caption_style,
         cropX: clip.crop_x != null ? Number(clip.crop_x) : 0.5,
+        layout: clip.layout === 'fill' ? 'fill' : 'fit',
       });
 
       const key = `renders/${clip.user_id}/${clip.video_id}/${clip.id}.mp4`;
       await uploadFile(outPath, key, 'video/mp4');
       await query(`UPDATE clips SET render_path = $2, render_status = 'ready' WHERE id = $1`, [clip.id, key]);
       return key;
+    } catch (err) {
+      await query(`UPDATE clips SET render_status = 'failed' WHERE id = $1`, [clip.id]).catch(() => {});
+      throw err;
     } finally {
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -103,10 +107,11 @@ const patchSchema = z.object({
   start_sec: z.number().nonnegative().optional(),
   end_sec: z.number().positive().optional(),
   crop_x: z.number().min(0).max(1).optional(),
+  layout: z.enum(['fit', 'fill']).optional(),
 });
 // Changing any of these makes an existing render stale → clear it so the next
 // export re-renders with the new look.
-const VISUAL_FIELDS = ['caption_style', 'captions', 'start_sec', 'end_sec', 'crop_x'];
+const VISUAL_FIELDS = ['caption_style', 'captions', 'start_sec', 'end_sec', 'crop_x', 'layout'];
 router.patch(
   '/:id',
   requireAuth,
@@ -153,14 +158,23 @@ router.get(
     const clip = rows[0];
     if (!clip) throw new ApiError(404, 'Clip not found');
 
-    const renderPath = await ensureRendered(clip);
+    // Already rendered → return the download URL immediately.
+    if (clip.render_path) {
+      await query(
+        `INSERT INTO usage_events (user_id, kind, caption_style) VALUES ($1, 'clip_exported', $2)`,
+        [req.user!.id, clip.caption_style],
+      );
+      return res.json({ status: 'ready', url: await signedUrl(clip.render_path, 600) });
+    }
 
-    await query(
-      `INSERT INTO usage_events (user_id, kind, caption_style) VALUES ($1, 'clip_exported', $2)`,
-      [req.user!.id, clip.caption_style],
-    );
-    const url = await signedUrl(renderPath, 600);
-    res.json({ url });
+    // Not rendered yet → kick off the render in the BACKGROUND and tell the
+    // client to poll (rendering can take a while on modest compute). This keeps
+    // the HTTP request short so it never times out.
+    if (clip.render_status === 'failed') {
+      await query(`UPDATE clips SET render_status = 'queued' WHERE id = $1`, [clip.id]);
+    }
+    void ensureRendered(clip).catch((err) => console.error(`render ${clip.id} failed:`, err));
+    res.status(202).json({ status: 'rendering' });
   }),
 );
 

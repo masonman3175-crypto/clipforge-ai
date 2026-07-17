@@ -114,39 +114,56 @@ export async function renderVerticalClip(opts: {
   captions: CaptionToken[];
   style?: string;
   cropX?: number; // horizontal crop position, 0 (left) … 1 (right); 0.5 = center
+  layout?: 'fit' | 'fill'; // fit = blurred bars/whole screen; fill = crop/zoom
 }): Promise<string> {
   const { sourcePath, outPath, startSec, endSec, captions } = opts;
   const style = CAPTION_STYLES[opts.style ?? 'bold-center'] ?? CAPTION_STYLES['bold-center'];
   const duration = endSec - startSec;
   const cropX = Math.min(1, Math.max(0, opts.cropX ?? 0.5));
+  const layout = opts.layout === 'fill' ? 'fill' : 'fit';
 
   const workDir = await mkdtemp(path.join(tmpdir(), 'clipforge-'));
   const assPath = path.join(workDir, 'captions.ass');
   await writeFile(assPath, buildAss(captions, style), 'utf8');
-
-  const vf = [
-    // Scale to cover the 9:16 frame (lanczos = sharper), then crop a 1080-wide
-    // window whose horizontal offset the user controls (cropX).
-    'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos',
-    `crop=1080:1920:(iw-1080)*${cropX.toFixed(4)}:0`,
-    `subtitles='${escFilterPath(assPath)}':fontsdir='${escFilterPath(FONTS_DIR)}'`,
-  ].join(',');
+  const subs = `subtitles='${escFilterPath(assPath)}':fontsdir='${escFilterPath(FONTS_DIR)}'`;
 
   return new Promise((resolve, reject) => {
-    ffmpeg(sourcePath)
+    const cmd = ffmpeg(sourcePath)
       .seekInput(startSec) // fast input seek (before -i) — key for long sources
-      .duration(duration)
-      .videoFilters(vf)
+      .duration(duration);
+
+    if (layout === 'fit') {
+      // Whole frame visible, centered, with a blurred zoomed copy filling the
+      // top/bottom bars. The foreground is DOWNSCALED (sharp, no upscsale blur).
+      cmd
+        .complexFilter([
+          '[0:v]split=2[bg][fg]',
+          '[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=28[bgb]',
+          '[fg]scale=1080:-2:flags=lanczos[fgs]',
+          '[bgb][fgs]overlay=(W-w)/2:(H-h)/2[ov]',
+          `[ov]${subs}[out]`,
+        ])
+        .outputOptions(['-map [out]', '-map 0:a?']);
+    } else {
+      cmd.videoFilters(
+        [
+          'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos',
+          `crop=1080:1920:(iw-1080)*${cropX.toFixed(4)}:0`,
+          subs,
+        ].join(','),
+      );
+    }
+
+    cmd
       .outputOptions([
         '-c:v libx264',
-        '-preset veryfast', // much better quality than ultrafast, still fast
-        '-crf 19', // lower = higher quality (visually near-lossless)
+        '-preset veryfast',
+        '-crf 20',
         '-pix_fmt yuv420p',
         '-c:a aac',
         '-b:a 160k',
         '-movflags +faststart',
       ])
-      .size('1080x1920')
       .on('end', () => resolve(outPath))
       .on('error', (err) => reject(new Error(`FFmpeg render failed: ${err.message}`)))
       .save(outPath);

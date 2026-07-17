@@ -35,6 +35,7 @@ const PLATFORMS = [
 export function PublishBar({ clip }: { clip: any }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function captionFor(key: 'tiktok' | 'reel' | 'shorts') {
     const title = clip.titles?.[key] ?? clip.title;
@@ -46,18 +47,36 @@ export function PublishBar({ clip }: { clip: any }) {
     return `${title}\n\n${tags}`.trim();
   }
 
+  /** Ask for the export; the render runs in the background, so poll until ready. */
+  async function getExportUrl(): Promise<string | null> {
+    const first = await api<{ status: string; url?: string }>(`/clips/${clip.id}/download`);
+    if (first.url) return first.url.startsWith('#') ? null : first.url;
+
+    // status === 'rendering' → poll the clip until the render finishes.
+    for (let i = 0; i < 90; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const c = await api<{ render_status: string }>(`/clips/${clip.id}`);
+      if (c.render_status === 'ready') {
+        const done = await api<{ url?: string }>(`/clips/${clip.id}/download`);
+        return done.url && !done.url.startsWith('#') ? done.url : null;
+      }
+      if (c.render_status === 'failed') throw new Error('Render failed — please try again.');
+    }
+    throw new Error('Render is taking too long — please try again.');
+  }
+
   async function publish(p: (typeof PLATFORMS)[number]) {
     setBusy(p.key);
+    setError(null);
     try {
       // 1. Copy the platform caption so the user can paste it after upload.
       await navigator.clipboard.writeText(captionFor(p.key)).catch(() => {});
 
-      // 2. Get the export and download it. We fetch it as a blob first because
-      //    the file lives on R2 (a different origin), and browsers ignore the
-      //    <a download> attribute for cross-origin URLs — so a plain link would
-      //    just open the video instead of saving it.
-      const { url } = await api<{ url: string }>(`/clips/${clip.id}/download`);
-      if (url && !url.startsWith('#')) {
+      // 2. Get the export (rendered on demand) and download it. We fetch it as a
+      //    blob first because the file lives on R2 (a different origin) and
+      //    browsers ignore <a download> for cross-origin URLs.
+      const url = await getExportUrl();
+      if (url) {
         const res = await fetch(url);
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
@@ -75,6 +94,8 @@ export function PublishBar({ clip }: { clip: any }) {
 
       setDone(p.key);
       setTimeout(() => setDone(null), 4000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Export failed');
     } finally {
       setBusy(null);
     }
@@ -114,9 +135,10 @@ export function PublishBar({ clip }: { clip: any }) {
 
       {busy && (
         <p className="text-xs text-muted-foreground">
-          Rendering your 1080×1920 clip with captions… this takes ~10–30s the first time.
+          Rendering your 1080×1920 clip with captions… this can take up to a minute the first time.
         </p>
       )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
       {done && !busy && (
         <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
           ✓ Clip downloaded and caption copied to your clipboard. Paste it into the {PLATFORMS.find((p) => p.key === done)?.label} uploader that just opened.
