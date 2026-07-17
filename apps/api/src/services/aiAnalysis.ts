@@ -2,6 +2,32 @@ import { z } from 'zod';
 import { aiClient, AI_MODELS } from './aiClient.js';
 import type { TranscriptWord } from './transcription.js';
 
+/**
+ * Chat completion with retry on PER-MINUTE rate limits (free tier caps tokens/min).
+ * Waits the server-suggested delay and retries. Does NOT retry per-day limits or
+ * "request too large" errors (those won't clear by waiting a few seconds).
+ */
+async function aiChat(params: Parameters<typeof aiClient.chat.completions.create>[0]): Promise<any> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await aiClient.chat.completions.create(params);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const perMinute =
+        /tokens per minute|TPM|rate limit|429/i.test(msg) &&
+        !/per day|TPD/i.test(msg) &&
+        !/request too large|413/i.test(msg);
+      if (perMinute && attempt < 4) {
+        const m = msg.match(/try again in ([\d.]+)s/);
+        const waitMs = Math.min(m ? Math.ceil(parseFloat(m[1]) * 1000) + 800 : (attempt + 1) * 6000, 30000);
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 export type ClipCategory =
   | 'funny'
   | 'emotional'
@@ -85,13 +111,13 @@ export async function detectClips(
 
   let completion;
   try {
-    completion = await aiClient.chat.completions.create({ model: AI_MODELS.analysis, ...params });
+    completion = await aiChat({ model: AI_MODELS.analysis, ...params });
   } catch (e) {
     // If the primary (bigger) model's daily budget is exhausted, fall back to the
     // lighter model so clip detection still works rather than failing outright.
     const msg = e instanceof Error ? e.message : String(e);
     if (AI_MODELS.analysis !== AI_MODELS.assets && /rate limit|429|tokens per day|TPD/i.test(msg)) {
-      completion = await aiClient.chat.completions.create({ model: AI_MODELS.assets, ...params });
+      completion = await aiChat({ model: AI_MODELS.assets, ...params });
     } else {
       throw e;
     }
@@ -144,7 +170,7 @@ export async function generateClipAssets(clipTranscript: string, category: ClipC
     '- hashtags: { trending: [...], niche: [...], seo: [...] } — 5 each, no # symbol duplication issues, include the leading #.',
   ].join('\n');
 
-  const completion = await aiClient.chat.completions.create({
+  const completion = await aiChat({
     model: AI_MODELS.assets,
     temperature: 0.9,
     response_format: { type: 'json_object' },
@@ -175,8 +201,15 @@ export async function generateClipAssets(clipTranscript: string, category: ClipC
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Compact "12.3 word word word" lines, ~1 line per ~5s window, to keep tokens low. */
-function buildTimedTranscript(words: TranscriptWord[], windowSec = 5): string {
+/**
+ * Compact "12.3 word word word" lines (~1 line per 5s). For long videos the
+ * result is DOWNSAMPLED (evenly-spaced lines dropped) to fit within a token
+ * budget — the free AI tier caps a single request's tokens, and a long
+ * transcript would otherwise be rejected as "too large". Real timestamps are
+ * preserved on the kept lines, so clip boundaries stay accurate across the whole
+ * video; only the resolution drops.
+ */
+function buildTimedTranscript(words: TranscriptWord[], windowSec = 5, budgetChars = 12000): string {
   if (words.length === 0) return '';
   const lines: string[] = [];
   let windowStart = words[0].start;
@@ -190,7 +223,12 @@ function buildTimedTranscript(words: TranscriptWord[], windowSec = 5): string {
     bucket.push(w.word);
   }
   if (bucket.length) lines.push(`${windowStart.toFixed(1)} ${bucket.join(' ')}`);
-  return lines.join('\n');
+
+  const full = lines.join('\n');
+  if (full.length <= budgetChars) return full;
+  // Keep every Nth line so the sample spans the whole video but fits the budget.
+  const step = Math.ceil(full.length / budgetChars);
+  return lines.filter((_, i) => i % step === 0).join('\n');
 }
 
 /** Slice the transcript words that fall inside [start, end] into caption tokens. */
