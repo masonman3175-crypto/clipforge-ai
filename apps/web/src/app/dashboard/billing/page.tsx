@@ -178,11 +178,11 @@ export default function BillingPage() {
             <p>3. A bot will send you a license key instantly</p>
             <p>4. Enter the key above to unlock unlimited access</p>
           </div>
-          <Button variant="outline" className="gap-2" asChild>
-            <a href="https://discord.gg/YOUR_SERVER_INVITE" target="_blank" rel="noopener noreferrer">
+          <a href="https://discord.gg/YOUR_SERVER_INVITE" target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" className="gap-2">
               Join Discord Server <ExternalLink className="h-3 w-3" />
-            </a>
-          </Button>
+            </Button>
+          </a>
         </CardContent>
       </Card>
 

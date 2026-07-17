@@ -20,6 +20,12 @@ interface LicenseStats {
   free_keys: number;
 }
 
+interface PlatformStats {
+  licenses: LicenseStats;
+  users: UserStats;
+  trials: { total: number; videos: number };
+}
+
 interface UserStats {
   total_users: number;
   pro_users: number;
@@ -64,14 +70,13 @@ export default function AdminPage() {
       if (!data.session) return router.replace('/sign-in');
       Promise.all([
         api<{ stats: LicenseStats; licenses: License[] }>('/licenses/admin'),
-        api<LicenseStats>('/licenses/stats'),
-        api<UserStats>('/licenses/stats'),
+        api<PlatformStats>('/licenses/stats'),
         api<any[]>('/admin/users'),
       ])
-        .then(([licAdmin, _, stats, userList]) => {
+        .then(([licAdmin, platformStats, userList]) => {
           setLicenseStats(licAdmin.stats);
           setLicenses(licAdmin.licenses);
-          setUserStats(stats.users);
+          setUserStats(platformStats.users);
           setUsers(userList);
         })
         .catch(() => setDenied(true));
@@ -201,7 +206,7 @@ export default function AdminPage() {
                     <span className="font-mono text-xs">{lic.code}</span>
                     <Badge variant={
                       lic.status === 'redeemed' ? 'success' :
-                      lic.status === 'revoked' ? 'destructive' : 'muted'
+                      lic.status === 'revoked' ? 'warn' : 'muted'
                     }>
                       {lic.status}
                     </Badge>
