@@ -139,7 +139,9 @@ export async function renderVerticalClip(opts: {
       cmd
         .complexFilter([
           '[0:v]split=2[bg][fg]',
-          '[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=30[bgb]',
+          // Blur a TINY copy then upscale — visually identical, ~30x cheaper than
+          // blurring at full resolution (which was far too slow on small compute).
+          '[bg]scale=192:342:force_original_aspect_ratio=increase,crop=192:342,gblur=sigma=10,scale=1080:1920[bgb]',
           '[fg]scale=1080:1280:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1280[fgs]',
           '[bgb][fgs]overlay=(W-w)/2:(H-h)/2[ov]',
           `[ov]${subs}[out]`,
@@ -158,11 +160,11 @@ export async function renderVerticalClip(opts: {
     cmd
       .outputOptions([
         '-c:v libx264',
-        '-preset faster',
-        '-crf 18',
+        '-preset veryfast',
+        '-crf 20',
         '-pix_fmt yuv420p',
         '-c:a aac',
-        '-b:a 192k',
+        '-b:a 160k',
         '-movflags +faststart',
       ])
       .on('end', () => resolve(outPath))
