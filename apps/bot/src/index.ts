@@ -3,7 +3,6 @@ import {
   GatewayIntentBits,
   REST,
   Routes,
-  Partials,
 } from 'discord.js';
 import { TOKEN, GUILD_ID } from './config.js';
 import { commands } from './commands.js';
@@ -16,14 +15,12 @@ import {
   handleUser,
 } from './handlers.js';
 
+// Only the (non-privileged) Guilds intent is needed for slash commands.
+// The optional welcome-on-join message below needs the privileged
+// GuildMembers intent — to enable it, add GatewayIntentBits.GuildMembers here
+// AND turn on "Server Members Intent" in the Discord Developer Portal.
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-  partials: [Partials.GuildMember],
+  intents: [GatewayIntentBits.Guilds],
 });
 
 client.once('ready', async (c) => {

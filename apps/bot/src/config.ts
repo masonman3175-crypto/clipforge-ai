@@ -2,8 +2,10 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// This file lives at apps/bot/src, so the repo root (.env) is 3 levels up.
+// (In the cloud there's no .env file — dotenv no-ops and host env vars are used.)
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../../../.env') });
+dotenv.config({ path: path.resolve(here, '../../../.env') });
 
 export const TOKEN = process.env.DISCORD_BOT_TOKEN;
 export const GUILD_ID = process.env.DISCORD_GUILD_ID;
