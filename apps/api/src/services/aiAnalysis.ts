@@ -77,15 +77,25 @@ export async function detectClips(
     'Return JSON: { "clips": [ ... ] } sorted by virality_score, highest first.',
   ].join('\n');
 
-  const completion = await aiClient.chat.completions.create({
-    model: AI_MODELS.analysis,
-    temperature: 0.6,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-  });
+  const messages = [
+    { role: 'system' as const, content: system },
+    { role: 'user' as const, content: user },
+  ];
+  const params = { temperature: 0.6, response_format: { type: 'json_object' as const }, messages };
+
+  let completion;
+  try {
+    completion = await aiClient.chat.completions.create({ model: AI_MODELS.analysis, ...params });
+  } catch (e) {
+    // If the primary (bigger) model's daily budget is exhausted, fall back to the
+    // lighter model so clip detection still works rather than failing outright.
+    const msg = e instanceof Error ? e.message : String(e);
+    if (AI_MODELS.analysis !== AI_MODELS.assets && /rate limit|429|tokens per day|TPD/i.test(msg)) {
+      completion = await aiClient.chat.completions.create({ model: AI_MODELS.assets, ...params });
+    } else {
+      throw e;
+    }
+  }
 
   const parsed = clipsResponse.parse(JSON.parse(completion.choices[0].message.content ?? '{}'));
 
@@ -135,7 +145,7 @@ export async function generateClipAssets(clipTranscript: string, category: ClipC
   ].join('\n');
 
   const completion = await aiClient.chat.completions.create({
-    model: AI_MODELS.analysis,
+    model: AI_MODELS.assets,
     temperature: 0.9,
     response_format: { type: 'json_object' },
     messages: [

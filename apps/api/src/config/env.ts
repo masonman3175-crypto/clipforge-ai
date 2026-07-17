@@ -44,6 +44,10 @@ const schema = z.object({
   OPENAI_ANALYSIS_MODEL: z.string().default('gpt-4o-mini'),
   GROQ_TRANSCRIBE_MODEL: z.string().default('whisper-large-v3'),
   GROQ_ANALYSIS_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  // Cheaper/higher-limit model for the bulk per-clip asset writing (hooks/titles/
+  // hashtags), so the big model's low daily token budget is reserved for the
+  // quality-critical clip-detection step.
+  GROQ_ASSETS_MODEL: z.string().default('llama-3.1-8b-instant'),
 
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),

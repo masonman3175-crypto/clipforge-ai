@@ -20,6 +20,8 @@ export const aiClient = new OpenAI({
 export const AI_MODELS = {
   transcribe: useGroq ? env.GROQ_TRANSCRIBE_MODEL : env.OPENAI_TRANSCRIBE_MODEL,
   analysis: useGroq ? env.GROQ_ANALYSIS_MODEL : env.OPENAI_ANALYSIS_MODEL,
+  // Lighter model for high-volume asset generation (Groq only; OpenAI reuses one).
+  assets: useGroq ? env.GROQ_ASSETS_MODEL : env.OPENAI_ANALYSIS_MODEL,
 };
 
 /** True when an AI provider is actually configured (not just a placeholder). */

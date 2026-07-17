@@ -95,10 +95,15 @@ export async function processVideo(videoId: string): Promise<void> {
     });
   } catch (err) {
     console.error(`processVideo(${videoId}) failed:`, err);
-    await query(
-      `UPDATE videos SET status = 'failed', error_message = $2 WHERE id = $1`,
-      [videoId, err instanceof Error ? err.message : 'Unknown error'],
-    );
+    const raw = err instanceof Error ? err.message : 'Unknown error';
+    const friendly =
+      /rate limit|429|tokens per day|TPD/i.test(raw)
+        ? "The free AI daily limit was reached. Please try again later (it resets each day), or upgrade the Groq plan for higher limits."
+        : raw;
+    await query(`UPDATE videos SET status = 'failed', error_message = $2 WHERE id = $1`, [
+      videoId,
+      friendly,
+    ]);
   }
 }
 
