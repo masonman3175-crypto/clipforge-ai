@@ -60,6 +60,11 @@ const schema = z.object({
   MAX_UPLOAD_MB: z.coerce.number().default(2048),
 
   ADMIN_EMAILS: z.string().default(''),
+
+  // Discord bot (for license management)
+  DISCORD_BOT_TOKEN: z.string().optional(),
+  DISCORD_GUILD_ID: z.string().optional(),
+  DISCORD_LICENSE_ROLE_ID: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

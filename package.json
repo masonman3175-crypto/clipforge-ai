@@ -11,7 +11,8 @@
     "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev -w @clipforge/web\" \"npm run dev -w @clipforge/api\"",
     "dev:web": "npm run dev -w @clipforge/web",
     "dev:api": "npm run dev -w @clipforge/api",
-    "build": "npm run build -w @clipforge/api && npm run build -w @clipforge/web",
+    "dev:bot": "npm run dev -w @clipforge/bot",
+    "build": "npm run build -w @clipforge/api && npm run build -w @clipforge/web && npm run build -w @clipforge/bot",
     "db:migrate": "npm run migrate -w @clipforge/api",
     "lint": "npm run lint -w @clipforge/web && npm run lint -w @clipforge/api"
   },

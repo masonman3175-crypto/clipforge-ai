@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Upload, Clapperboard, Film, Download, Crown } from 'lucide-react';
+import { Upload, Clapperboard, Film, Download, Crown, KeyRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,8 +30,7 @@ export default function DashboardHome() {
     { label: 'Clips exported', value: me?.clips_exported ?? 0, icon: Download },
   ];
 
-  const freeLimit = 3;
-  const used = me?.videos_this_month ?? 0;
+  const isPro = me?.plan === 'pro';
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -63,18 +62,24 @@ export default function DashboardHome() {
         <Card>
           <CardContent className="space-y-3 pt-6">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Monthly usage</span>
-              <Badge variant={me?.plan === 'pro' ? 'accent' : 'muted'}>
-                {me?.plan === 'pro' ? 'Pro · unlimited' : 'Free plan'}
+              <span className="text-sm font-medium">Access Status</span>
+              <Badge variant={isPro ? 'accent' : 'muted'}>
+                {isPro ? 'Pro - Unlimited' : 'Free Trial'}
               </Badge>
             </div>
-            {me?.plan === 'pro' ? (
+            {isPro ? (
               <p className="text-sm text-muted-foreground">You have unlimited video processing.</p>
             ) : (
-              <>
-                <Progress value={(used / freeLimit) * 100} />
-                <p className="text-sm text-muted-foreground">{used} / {freeLimit} videos used this month</p>
-              </>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Upload 1 video to try ClipForge. Need more? Get a key from Discord.
+                </p>
+                <Link href="/dashboard/billing">
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <KeyRound className="h-4 w-4" /> Get License Key
+                  </Button>
+                </Link>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -83,9 +88,9 @@ export default function DashboardHome() {
           <CardContent className="space-y-2 pt-6">
             <span className="text-sm font-medium">Most-used caption style</span>
             <div className="text-lg font-semibold capitalize">
-              {me?.top_caption_style?.replace('-', ' ') ?? '—'}
+              {me?.top_caption_style?.replace('-', ' ') ?? '---'}
             </div>
-            {me?.plan !== 'pro' && (
+            {!isPro && (
               <Link href="/dashboard/billing">
                 <Button variant="outline" size="sm" className="mt-2 gap-2">
                   <Crown className="h-4 w-4 text-amber-400" /> Upgrade for premium styles

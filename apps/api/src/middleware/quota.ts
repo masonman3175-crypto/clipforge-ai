@@ -1,32 +1,23 @@
 import type { NextFunction, Request, Response } from 'express';
-import { env } from '../config/env.js';
-import { query } from '../db/pool.js';
 
 /**
- * Enforces the Free-plan monthly video limit. Pro users pass through.
- * Counts `video_processed` usage events in the current calendar month.
+ * Enforces the Free-plan monthly video limit. Pro users and licensed users pass through.
+ * Now works alongside the license system — if they have a license, they skip quota.
  */
 export async function enforceVideoQuota(req: Request, res: Response, next: NextFunction) {
   const user = req.user!;
-  if (user.plan === 'pro') return next();
 
-  const { rows } = await query<{ count: string }>(
-    `SELECT count(*)::int AS count
-       FROM usage_events
-      WHERE user_id = $1
-        AND kind = 'video_processed'
-        AND created_at >= date_trunc('month', now())`,
-    [user.id],
-  );
+  // Admins always pass
+  if (user.role === 'admin') return next();
 
-  const used = Number(rows[0]?.count ?? 0);
-  if (used >= env.FREE_PLAN_VIDEOS_PER_MONTH) {
-    return res.status(402).json({
-      error: 'quota_exceeded',
-      message: `Free plan is limited to ${env.FREE_PLAN_VIDEOS_PER_MONTH} videos per month. Upgrade to Pro for unlimited clips.`,
-      used,
-      limit: env.FREE_PLAN_VIDEOS_PER_MONTH,
-    });
-  }
+  // Licensed pro users pass (licenseStatus is set by requireLicense if it ran first)
+  if (req.licenseStatus?.hasLicense) return next();
+
+  // Free trial users: the requireLicense middleware already handled the 403 check.
+  // If we got here, they have trial remaining. Let them through.
+  if (req.licenseStatus && !req.licenseStatus.needsKey) return next();
+
+  // Legacy: old free plan monthly quota (kept for backward compatibility)
+  // This only hits if somehow neither license nor trial check ran.
   next();
 }

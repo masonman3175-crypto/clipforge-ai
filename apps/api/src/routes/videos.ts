@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'node:path';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
+import { requireLicense, trackFreeTrialUsage } from '../middleware/license.js';
 import { enforceVideoQuota } from '../middleware/quota.js';
 import { asyncHandler, ApiError } from '../middleware/error.js';
 import { query } from '../db/pool.js';
@@ -26,6 +27,7 @@ const initSchema = z.object({
 router.post(
   '/upload-init',
   requireAuth,
+  requireLicense,
   enforceVideoQuota,
   asyncHandler(async (req, res) => {
     const user = req.user!;
@@ -41,6 +43,12 @@ router.post(
     const { signedUrl: uploadUrl, path } = await createUploadUrl(storageKey, contentType);
 
     await query('UPDATE videos SET storage_path = $2 WHERE id = $1', [videoId, storageKey]);
+
+    // Track free trial usage for non-licensed users
+    if (!req.licenseStatus?.hasLicense) {
+      await trackFreeTrialUsage(user.id);
+    }
+
     res.json({ id: videoId, signedUrl: uploadUrl, path });
   }),
 );
@@ -72,6 +80,7 @@ const upload = multer({
 router.post(
   '/',
   requireAuth,
+  requireLicense,
   enforceVideoQuota,
   upload.single('file'),
   asyncHandler(async (req, res) => {
@@ -95,6 +104,11 @@ router.post(
     // Fire-and-forget. Swap for a job queue in production (see workers/processVideo.ts).
     void processVideo(videoId);
 
+    // Track free trial usage for non-licensed users
+    if (!req.licenseStatus?.hasLicense) {
+      await trackFreeTrialUsage(user.id);
+    }
+
     res.status(202).json({ id: videoId, status: 'queued' });
   }),
 );
@@ -104,6 +118,7 @@ const ytSchema = z.object({ url: z.string().url() });
 router.post(
   '/youtube',
   requireAuth,
+  requireLicense,
   enforceVideoQuota,
   asyncHandler(async (req, res) => {
     const user = req.user!;
@@ -116,6 +131,11 @@ router.post(
     );
     const videoId = rows[0].id;
     void processVideo(videoId);
+
+    // Track free trial usage for non-licensed users
+    if (!req.licenseStatus?.hasLicense) {
+      await trackFreeTrialUsage(user.id);
+    }
 
     res.status(202).json({ id: videoId, status: 'queued' });
   }),

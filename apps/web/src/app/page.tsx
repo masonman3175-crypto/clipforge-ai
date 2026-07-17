@@ -43,7 +43,7 @@ export default function Landing() {
           </Link>
           <Link href="/sign-in"><Button size="lg" variant="outline">Sign in</Button></Link>
         </div>
-        <p className="mt-4 text-xs text-muted-foreground">Free plan includes 3 videos / month. No card required.</p>
+        <p className="mt-4 text-xs text-muted-foreground">Try 1 video free. Get a license key from our Discord for unlimited access.</p>
       </section>
 
       {/* Features */}

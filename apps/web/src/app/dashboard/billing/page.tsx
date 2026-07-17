@@ -1,125 +1,227 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Crown, KeyRound } from 'lucide-react';
+import { Check, Crown, KeyRound, Shield, AlertTriangle, ExternalLink } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge, Input } from '@/components/ui/misc';
 
+interface LicenseInfo {
+  valid: boolean;
+  tier: string | null;
+  expiresAt: string | null;
+  devicesUsed: number;
+  maxDevices: number;
+}
+
+interface TrialInfo {
+  videos_used: number;
+  max_videos: number;
+}
+
+interface Me {
+  plan: 'free' | 'pro';
+  trial: TrialInfo;
+  licenses: Array<{
+    tier: string;
+    status: string;
+    redeemed_at: string;
+    expires_at: string | null;
+  }>;
+}
+
 export default function BillingPage() {
-  const [plan, setPlan] = useState<'free' | 'pro'>('free');
-  const [loading, setLoading] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
+  const [license, setLicense] = useState<LicenseInfo | null>(null);
   const [code, setCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [redeemMsg, setRedeemMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  useEffect(() => { api<{ plan: 'free' | 'pro' }>('/analytics/me').then((m) => setPlan(m.plan)); }, []);
+  useEffect(() => {
+    api<Me>('/licenses/me').then(setMe).catch(() => setMe(null));
+    api<LicenseInfo>('/licenses/validate', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }).then(setLicense).catch(() => setLicense(null));
+  }, []);
 
   async function redeem() {
     setRedeeming(true);
     setRedeemMsg(null);
     try {
-      await api('/licenses/redeem', { method: 'POST', body: JSON.stringify({ code }) });
-      setPlan('pro');
+      // Generate a simple device fingerprint
+      const fp = navigator.userAgent + screen.width + screen.height + navigator.language;
+      const result = await api<{ ok: boolean; plan: string; message?: string }>('/licenses/redeem', {
+        method: 'POST',
+        body: JSON.stringify({ code, deviceFingerprint: fp }),
+      });
+      setRedeemMsg({ ok: true, text: result.message || "Key activated! You now have unlimited access." });
+      // Refresh data
+      const updated = await api<Me>('/licenses/me');
+      setMe(updated);
+      const updatedLicense = await api<LicenseInfo>('/licenses/validate', {
+        method: 'POST',
+        body: JSON.stringify({ deviceFingerprint: fp }),
+      });
+      setLicense(updatedLicense);
       setCode('');
-      setRedeemMsg({ ok: true, text: "🎉 Redeemed! You're now on Pro with unlimited access." });
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Could not redeem this code';
+      const msg = e instanceof ApiError ? e.message : 'Could not activate this key';
       setRedeemMsg({ ok: false, text: msg });
     } finally {
       setRedeeming(false);
     }
   }
 
-  async function upgrade() {
-    setLoading(true);
-    try {
-      const { url } = await api<{ url: string }>('/billing/checkout', { method: 'POST' });
-      window.location.href = url;
-    } catch (e) {
-      alert('Billing is not configured yet. Add your Stripe keys to enable checkout.');
-      setLoading(false);
-    }
-  }
-
-  async function manage() {
-    const { url } = await api<{ url: string }>('/billing/portal', { method: 'POST' });
-    window.location.href = url;
-  }
-
-  const plans = [
-    {
-      name: 'Free', price: '$0', tier: 'free' as const,
-      features: ['3 videos / month', 'Up to 10 clips per video', 'Standard caption styles', '1080×1920 exports'],
-    },
-    {
-      name: 'Pro', price: '$29', tier: 'pro' as const,
-      features: ['Unlimited videos', 'Unlimited clips', 'Premium caption styles', 'Priority rendering', 'No watermark'],
-    },
-  ];
+  const isPro = me?.plan === 'pro' || license?.valid;
+  const trialUsed = me?.trial?.videos_used ?? 0;
+  const trialMax = me?.trial?.max_videos ?? 1;
+  const trialRemaining = Math.max(0, trialMax - trialUsed);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Billing</h1>
-        <p className="text-sm text-muted-foreground">You are on the <span className="font-medium capitalize">{plan}</span> plan.</p>
+        <h1 className="text-2xl font-semibold">License & Billing</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage your ClipForge AI license key.
+        </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {plans.map((p) => (
-          <Card key={p.name} className={p.tier === 'pro' ? 'border-primary/50' : ''}>
-            <CardContent className="space-y-4 pt-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-lg font-semibold">
-                  {p.tier === 'pro' && <Crown className="h-5 w-5 text-amber-400" />} {p.name}
+      {/* Current Status */}
+      <Card className={isPro ? 'border-emerald-500/50' : 'border-amber-500/50'}>
+        <CardContent className="space-y-4 pt-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              {isPro ? (
+                <>
+                  <Crown className="h-5 w-5 text-amber-400" /> Pro Access
+                </>
+              ) : (
+                <>
+                  <Shield className="h-5 w-5 text-muted-foreground" /> Free Trial
+                </>
+              )}
+            </div>
+            <Badge variant={isPro ? 'accent' : 'muted'}>
+              {isPro ? 'Active' : `${trialRemaining} video${trialRemaining !== 1 ? 's' : ''} left`}
+            </Badge>
+          </div>
+
+          {isPro ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-emerald-400">You have full access to all features.</p>
+              {license?.expiresAt && (
+                <p className="text-muted-foreground">
+                  Expires: {new Date(license.expiresAt).toLocaleDateString()}
+                </p>
+              )}
+              {license?.maxDevices && license.maxDevices > 1 && (
+                <p className="text-muted-foreground">
+                  Devices: {license.devicesUsed}/{license.maxDevices} used
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                You&apos;re on the free trial. You can process <strong>1 video</strong> to try ClipForge.
+              </p>
+              {trialRemaining <= 0 && (
+                <div className="flex items-center gap-2 text-amber-400">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Trial used up. Enter a license key to continue.</span>
                 </div>
-                {plan === p.tier && <Badge variant="success">Current</Badge>}
-              </div>
-              <div className="text-3xl font-bold">{p.price}<span className="text-sm font-normal text-muted-foreground">/mo</span></div>
-              <ul className="space-y-2 text-sm">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> {f}</li>
-                ))}
-              </ul>
-              {p.tier === 'pro' && plan === 'free' && (
-                <Button className="w-full" onClick={upgrade} disabled={loading}>{loading ? 'Redirecting…' : 'Upgrade to Pro'}</Button>
               )}
-              {p.tier === 'pro' && plan === 'pro' && (
-                <Button className="w-full" variant="outline" onClick={manage}>Manage subscription</Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Redeem a license code */}
-      {plan === 'free' && (
-        <Card>
-          <CardContent className="space-y-3 pt-6">
-            <div className="flex items-center gap-2 font-medium">
-              <KeyRound className="h-4 w-4 text-primary" /> Have a license code?
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Enter the code you received to unlock unlimited (Pro) access.
+      {/* License Key Entry */}
+      <Card>
+        <CardContent className="space-y-3 pt-6">
+          <div className="flex items-center gap-2 font-medium">
+            <KeyRound className="h-4 w-4 text-primary" /> Enter License Key
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Get a key from our Discord server after purchasing. Each key works on 1 device.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              placeholder="CLIP-XXXX-XXXX"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              className="font-mono uppercase"
+            />
+            <Button onClick={redeem} disabled={redeeming || code.trim().length < 4}>
+              {redeeming ? 'Activating...' : 'Activate'}
+            </Button>
+          </div>
+          {redeemMsg && (
+            <p className={`text-sm ${redeemMsg.ok ? 'text-emerald-400' : 'text-destructive'}`}>
+              {redeemMsg.text}
             </p>
-            <div className="flex gap-2">
-              <Input
-                placeholder="CLIP-XXXX-XXXX"
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                className="font-mono uppercase"
-              />
-              <Button onClick={redeem} disabled={redeeming || code.trim().length < 4}>
-                {redeeming ? 'Redeeming…' : 'Redeem'}
-              </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* How to get a key */}
+      <Card>
+        <CardContent className="space-y-3 pt-6">
+          <div className="flex items-center gap-2 font-medium">
+            Get a License Key
+          </div>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>1. Join our Discord server</p>
+            <p>2. Pay via Zelle, CashApp, or Venmo</p>
+            <p>3. A bot will send you a license key instantly</p>
+            <p>4. Enter the key above to unlock unlimited access</p>
+          </div>
+          <Button variant="outline" className="gap-2" asChild>
+            <a href="https://discord.gg/YOUR_SERVER_INVITE" target="_blank" rel="noopener noreferrer">
+              Join Discord Server <ExternalLink className="h-3 w-3" />
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Plan Comparison */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <CardContent className="space-y-4 pt-6">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-semibold">Free Trial</div>
+              {isPro && <Badge variant="muted">Expired</Badge>}
             </div>
-            {redeemMsg && (
-              <p className={`text-sm ${redeemMsg.ok ? 'text-emerald-400' : 'text-destructive'}`}>{redeemMsg.text}</p>
-            )}
+            <div className="text-3xl font-bold">$0</div>
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> 1 video to try</li>
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> AI clip detection</li>
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> Auto captions</li>
+            </ul>
           </CardContent>
         </Card>
-      )}
+
+        <Card className="border-primary/50">
+          <CardContent className="space-y-4 pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-lg font-semibold">
+                <Crown className="h-5 w-5 text-amber-400" /> Pro
+              </div>
+              {isPro && <Badge variant="success">Active</Badge>}
+            </div>
+            <div className="text-3xl font-bold">License</div>
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> Unlimited videos</li>
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> Unlimited clips</li>
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> All caption styles</li>
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> Priority rendering</li>
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" /> No watermark</li>
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

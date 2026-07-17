@@ -63,3 +63,31 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      # Discord bot (for license management)
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: DISCORD_LICENSE_ROLE_ID
+        sync: false
+
+  # Discord Bot — runs separately, connects to the same database.
+  - type: worker
+    name: clipforge-bot
+    runtime: node
+    plan: free
+    rootDir: apps/bot
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: DISCORD_LICENSE_ROLE_ID
+        sync: false
