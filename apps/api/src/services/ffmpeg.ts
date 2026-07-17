@@ -122,6 +122,14 @@ export async function renderVerticalClip(opts: {
   const cropX = Math.min(1, Math.max(0, opts.cropX ?? 0.5));
   const layout = opts.layout === 'fill' ? 'fill' : 'fit';
 
+  // Output 720x1280 — a standard, TikTok-accepted vertical resolution that keeps
+  // memory/CPU low enough to render reliably on small instances. Captions (authored
+  // at 1080x1920 PlayRes) are scaled to fit automatically by libass. The foreground
+  // "fit" box is 720x853 (same ~2/3-height proportion as before).
+  const W = 720;
+  const H = 1280;
+  const FG_H = 853;
+
   const workDir = await mkdtemp(path.join(tmpdir(), 'clipforge-'));
   const assPath = path.join(workDir, 'captions.ass');
   await writeFile(assPath, buildAss(captions, style), 'utf8');
@@ -133,16 +141,12 @@ export async function renderVerticalClip(opts: {
       .duration(duration);
 
     if (layout === 'fit') {
-      // Big centered video (fills ~2/3 of the height) with thin blurred bars on
-      // top/bottom. The foreground fills a 1080x1280 box (cover+crop), so only a
-      // little of the left/right edges is trimmed and the bezels stay small.
       cmd
         .complexFilter([
           '[0:v]split=2[bg][fg]',
-          // Blur a TINY copy then upscale — visually identical, ~30x cheaper than
-          // blurring at full resolution (which was far too slow on small compute).
-          '[bg]scale=192:342:force_original_aspect_ratio=increase,crop=192:342,gblur=sigma=10,scale=1080:1920[bgb]',
-          '[fg]scale=1080:1280:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1280[fgs]',
+          // Blur a tiny copy then upscale — visually identical, far cheaper.
+          `[bg]scale=128:228:force_original_aspect_ratio=increase,crop=128:228,gblur=sigma=8,scale=${W}:${H}[bgb]`,
+          `[fg]scale=${W}:${FG_H}:force_original_aspect_ratio=increase,crop=${W}:${FG_H}[fgs]`,
           '[bgb][fgs]overlay=(W-w)/2:(H-h)/2[ov]',
           `[ov]${subs}[out]`,
         ])
@@ -150,25 +154,43 @@ export async function renderVerticalClip(opts: {
     } else {
       cmd.videoFilters(
         [
-          'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos',
-          `crop=1080:1920:(iw-1080)*${cropX.toFixed(4)}:0`,
+          `scale=${W}:${H}:force_original_aspect_ratio=increase`,
+          `crop=${W}:${H}:(iw-${W})*${cropX.toFixed(4)}:0`,
           subs,
         ].join(','),
       );
     }
 
+    cmd.outputOptions([
+      '-c:v libx264',
+      '-preset veryfast',
+      '-crf 20',
+      '-pix_fmt yuv420p',
+      '-c:a aac',
+      '-b:a 128k',
+      '-movflags +faststart',
+    ]);
+
+    // Safety net: never let a render hang forever (free-tier stalls). Kill it and
+    // fail cleanly after 4 minutes so the UI can report an error instead of spinning.
+    const timer = setTimeout(() => {
+      try {
+        cmd.kill('SIGKILL');
+      } catch {
+        /* ignore */
+      }
+      reject(new Error('Render timed out'));
+    }, 240_000);
+
     cmd
-      .outputOptions([
-        '-c:v libx264',
-        '-preset veryfast',
-        '-crf 20',
-        '-pix_fmt yuv420p',
-        '-c:a aac',
-        '-b:a 160k',
-        '-movflags +faststart',
-      ])
-      .on('end', () => resolve(outPath))
-      .on('error', (err) => reject(new Error(`FFmpeg render failed: ${err.message}`)))
+      .on('end', () => {
+        clearTimeout(timer);
+        resolve(outPath);
+      })
+      .on('error', (err) => {
+        clearTimeout(timer);
+        reject(new Error(`FFmpeg render failed: ${err.message}`));
+      })
       .save(outPath);
   });
 }
