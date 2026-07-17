@@ -43,30 +43,43 @@ export async function detectClips(
   const timeline = buildTimedTranscript(words);
 
   const system = [
-    'You are a world-class short-form video editor who has produced hundreds of viral',
-    'TikToks, Reels, and YouTube Shorts. You find the single most shareable moments in',
-    'long-form content. You care about hooks in the first 3 seconds, emotional payoff,',
-    'controversy, strong opinions, humor, and satisfying story arcs.',
+    'You are a top TikTok editor who has made hundreds of clips with millions of views.',
+    'You have a ruthless eye for what actually goes viral on TikTok specifically.',
+    'A viral TikTok clip almost always has: (1) a HOOK in the first 3 seconds that stops',
+    'the scroll — a bold claim, a question, a shocking or funny line; (2) a single clear',
+    'payoff — the funniest joke, the most shocking reveal, the most relatable or',
+    'controversial take, or a satisfying story beat; (3) high energy and no slow buildup.',
+    'You RUTHLESSLY reject boring, rambling, or context-heavy segments — most of a long',
+    'video is NOT clip-worthy, and that is fine.',
   ].join(' ');
 
   const user = [
-    `Here is a timestamped transcript (seconds → text):\n\n${timeline}`,
+    `Timestamped transcript (seconds → words):\n\n${timeline}`,
     '',
-    `Select the ${targetCount} best standalone clips for short-form video.`,
-    'Rules:',
-    '- Each clip MUST be between 30 and 90 seconds long (end_sec - start_sec).',
-    '- Clips must not overlap.',
+    `Find the ${targetCount} single most VIRAL-FOR-TIKTOK moments. Quality over quantity —`,
+    'only pick moments that would genuinely make someone stop scrolling and watch.',
+    '',
+    'Each clip:',
+    '- 15 to 45 seconds long (short & punchy beats long every time on TikTok).',
+    '- MUST start right on a strong hook line (not slow lead-in). Set start_sec to where',
+    '  the hook actually begins.',
+    '- Must be self-contained (makes sense with no other context) and not overlap others.',
     '- start_sec/end_sec must fall within the transcript timeline.',
+    '',
+    'For each clip return:',
+    '- title: punchy internal label.',
     '- category ∈ {funny, emotional, controversial, opinion, story, engagement}.',
-    '- virality_score is your 0–100 estimate of viral potential.',
-    '- reason: one sentence on why this moment will perform.',
-    '- title: a punchy internal label (not the caption).',
-    'Return JSON: { "clips": [ ... ] }.',
+    '- start_sec, end_sec (numbers).',
+    '- virality_score: HONEST 0–100 TikTok viral potential. Be harsh — most clips are',
+    '  40–70; reserve 85+ for genuinely exceptional, share-worthy moments. Do not inflate.',
+    '- reason: one specific sentence on the hook + why it stops the scroll.',
+    '',
+    'Return JSON: { "clips": [ ... ] } sorted by virality_score, highest first.',
   ].join('\n');
 
   const completion = await aiClient.chat.completions.create({
     model: AI_MODELS.analysis,
-    temperature: 0.7,
+    temperature: 0.6,
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: system },
@@ -76,14 +89,15 @@ export async function detectClips(
 
   const parsed = clipsResponse.parse(JSON.parse(completion.choices[0].message.content ?? '{}'));
 
-  // Clamp to the 30–90s rule defensively (models occasionally drift).
+  // Clamp to a punchy 15–45s window (models occasionally drift), sort by score.
   return parsed.clips
     .map((c) => {
       const len = c.end_sec - c.start_sec;
-      if (len < 30) c.end_sec = c.start_sec + 30;
-      if (len > 90) c.end_sec = c.start_sec + 90;
+      if (len < 12) c.end_sec = c.start_sec + 15;
+      if (len > 45) c.end_sec = c.start_sec + 45;
       return c;
     })
+    .sort((a, b) => b.virality_score - a.virality_score)
     .slice(0, targetCount);
 }
 

@@ -133,13 +133,14 @@ export async function renderVerticalClip(opts: {
       .duration(duration);
 
     if (layout === 'fit') {
-      // Whole frame visible, centered, with a blurred zoomed copy filling the
-      // top/bottom bars. The foreground is DOWNSCALED (sharp, no upscsale blur).
+      // Big centered video (fills ~2/3 of the height) with thin blurred bars on
+      // top/bottom. The foreground fills a 1080x1280 box (cover+crop), so only a
+      // little of the left/right edges is trimmed and the bezels stay small.
       cmd
         .complexFilter([
           '[0:v]split=2[bg][fg]',
-          '[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=28[bgb]',
-          '[fg]scale=1080:-2:flags=lanczos[fgs]',
+          '[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=30[bgb]',
+          '[fg]scale=1080:1280:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1280[fgs]',
           '[bgb][fgs]overlay=(W-w)/2:(H-h)/2[ov]',
           `[ov]${subs}[out]`,
         ])
@@ -157,11 +158,11 @@ export async function renderVerticalClip(opts: {
     cmd
       .outputOptions([
         '-c:v libx264',
-        '-preset veryfast',
-        '-crf 20',
+        '-preset faster',
+        '-crf 18',
         '-pix_fmt yuv420p',
         '-c:a aac',
-        '-b:a 160k',
+        '-b:a 192k',
         '-movflags +faststart',
       ])
       .on('end', () => resolve(outPath))
